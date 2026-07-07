@@ -1,6 +1,6 @@
 # Compliance Utility
 
-[![Latest release](https://img.shields.io/github/v/release/schiroky/ComplianceUtility?label=Latest%20release&color=2ea44f&logo=github&logoColor=white)](https://github.com/schiroky/ComplianceUtility)
+[![Latest release](https://img.shields.io/github/v/release/schiroky/ComplianceUtility?label=Latest%20release&color=2ea44f&logo=github&logoColor=white)](https://github.com/schiroky/ComplianceUtility/releases)
 [![Wiki](https://img.shields.io/badge/Wiki-D29D00?logo=github&logoColor=white)](https://github.com/schiroky/ComplianceUtility/wiki)
 [![Support](https://img.shields.io/badge/Support-8A2BE2?logo=helpdesk&logoColor=white)](https://github.com/schiroky/ComplianceUtility/blob/main/SUPPORT.md)
 [![Manual](https://img.shields.io/badge/Manual-006ED8?logo=gitbook&logoColor=white)](https://github.com/schiroky/ComplianceUtility/blob/main/Manuals/3.2.4/Manual.md)
