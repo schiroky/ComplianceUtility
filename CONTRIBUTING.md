@@ -11,5 +11,5 @@ instructions provided by the bot. You will only need to do this once across all 
 
 Here's how you can help:
 
-* Contribute content: Add new content by submitting a [Pull request](https://github.com/microsoft/ComplianceUtility/pulls).
-* Report issues: Open an [Issue](https://github.com/microsoft/ComplianceUtility/issues) to report issues, suggest improvements or changes.
+* Contribute content: Add new content by submitting a [Pull request](https://github.com/schiroky/ComplianceUtility/pulls).
+* Report issues: Open an [Issue](https://github.com/schiroky/ComplianceUtility/issues) to report issues, suggest improvements or changes.
