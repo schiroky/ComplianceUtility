@@ -529,4 +529,4 @@ For new issues, file your bug or feature request as a [new Issue](https://github
 <br>
 <br>
 
-Copyright Microsoft® Corporation.
+Copyright © Claus Schiroky.
