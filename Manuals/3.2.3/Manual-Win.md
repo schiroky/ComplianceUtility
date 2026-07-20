@@ -48,10 +48,6 @@ With the Compliance Utility, you can run the most common options without local a
 [RESET](#reset), [RECORD PROBLEM](#record-problem), and COLLECT [Endpoint URLs](#endpoint-urls).
 
 However, if you run the Compliance Utility with local administrative privileges, you will get some more collected logs ([RECORD PROBLEM](#record-problem)) and a complete [RESET](#reset) of all settings, instead of just user-specific settings being reset. By the way: The latter option is sufficient in most cases to reset [Microsoft 365](https://www.microsoft.com/en-us/microsoft-365/products-apps-services) apps, while a complete reset is usually useful for all other applications.
-
-> **Note**
-> 
-> * If you want to use the Compliance Utility on Apple macOS, you can find the corresponding online manual [here](Manual-Mac.md).
 ### 🔵MIT License <a name="mit-license"></a>
 
 Copyright © Microsoft Corporation.
