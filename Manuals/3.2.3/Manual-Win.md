@@ -988,7 +988,7 @@ For more information, please see the following documentation:
 
 When creating the Compliance Utility, great care was taken to ensure quality and functionality. Extensive tests were carried out before publication to intercept and handle any errors. However, there is no guarantee that an error will not occur in a wide variety of configurations and environments.
 
-Should you ever encounter a problem with the Compliance Utility, please visit the [support page](https://github.com/microsoft/ComplianceUtility/blob/main/SUPPORT.md) on the project site.
+Should you ever encounter a problem with the Compliance Utility, please visit the [support page](https://github.com/schiroky/ComplianceUtility/blob/main/SUPPORT.md) on the project site.
 
 ### 🔵Microsoft Support Policy <a name="support-policy"></a>
 
