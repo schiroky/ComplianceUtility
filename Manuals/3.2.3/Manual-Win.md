@@ -156,7 +156,7 @@ If PowerShell script execution is restricted in your environment, you must first
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
 ```
 
-The Compliance Utility is code-signed with a Microsoft certificate.
+The Compliance Utility is code-signed with a certificate.
 
 #### 🔵Trust  PowerShell Gallery repository <a name="trust-powershellgallery-repository"></a>
 
