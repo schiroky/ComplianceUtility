@@ -8,7 +8,7 @@ Should you ever encounter a problem with the Compliance Utility, please use the 
 
 Under this policy, the Compliance Utility remains in support if the following criteria are met:
 
-* You're using the [![Latest release](https://img.shields.io/github/v/release/microsoft/ComplianceUtility?label=Latest%20release&color=2ea44f&logo=github&logoColor=white)](https://github.com/schiroky/ComplianceUtility/releases/tag/3.2.3) of the Compliance Utility.
+* You're using the [![Latest release](https://img.shields.io/github/v/release/schiroky/ComplianceUtility?label=Latest%20release&color=2ea44f&logo=github&logoColor=white)](https://github.com/schiroky/ComplianceUtility/releases) of the Compliance Utility.
 * You must be licensed with a product or service that uses a [Microsoft Information Protection subscription](https://learn.microsoft.com/en-us/office365/servicedescriptions/azure-information-protection#available-plans).
 
 ## 🟦How to file issues and get help  
