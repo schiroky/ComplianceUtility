@@ -5,7 +5,7 @@
 
 * [Description](#description)
    * [MIT License](#mit-license)
-   * [Microsoft Privacy Statement](#microsoft-privacy-statement)
+   * [Microsoft Privacy Statement](#privacy-statement)
 * [Requirements](#requirements)
    * [Internet access](#internet-access)
    * [AIPService module](#aipservice-module)
@@ -58,7 +58,7 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. 
 
-### 🔵Microsoft Privacy Statement <a name="microsoft-privacy-statement"></a>
+### 🔵Privacy Statement <a name="privacy-statement"></a>
 
 Your privacy is important to us. [This privacy statement](https://privacy.microsoft.com/en-US/privacystatement) explains the personal data Microsoft processes, how Microsoft processes it, and for what purposes.
 
