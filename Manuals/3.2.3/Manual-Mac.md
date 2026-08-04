@@ -44,7 +44,7 @@ Have you ever used the sensitivity button in a [Microsoft 365](https://www.micro
 
 ### 🔵MIT License <a name="mit-license"></a>
 
-Copyright © Microsoft Corporation.
+Copyright © Claus Schiroky.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
