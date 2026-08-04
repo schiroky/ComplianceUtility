@@ -50,7 +50,7 @@ With the Compliance Utility, you can run the most common options without local a
 However, if you run the Compliance Utility with local administrative privileges, you will get some more collected logs ([RECORD PROBLEM](#record-problem)) and a complete [RESET](#reset) of all settings, instead of just user-specific settings being reset. By the way: The latter option is sufficient in most cases to reset [Microsoft 365](https://www.microsoft.com/en-us/microsoft-365/products-apps-services) apps, while a complete reset is usually useful for all other applications.
 ### 🔵MIT License <a name="mit-license"></a>
 
-Copyright © Microsoft Corporation.
+Copyright © Claus Schiroky.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
