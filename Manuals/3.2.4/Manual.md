@@ -363,7 +363,7 @@ With the above command the following registry keys are cleaned up:
 [HKCR:\AllFilesystemObjects\shell\Microsoft.Azip.RightClick]
 ```
 
-The [DRMEncryptProperty](https://gpsearch.azurewebsites.net/#11665) and [OpenXMLEncryptProperty](https://gpsearch.azurewebsites.net/#11666) registry settings are purged of the following keys:
+The [DRMEncryptProperty](https://gpsearch.azurewebsites.net/?PolicyID=11665) and [OpenXMLEncryptProperty](https://gpsearch.azurewebsites.net/?PolicyID=11666) registry settings are purged of the following keys:
 
 ```
 [HKCU:\SOFTWARE\Policies\Microsoft\Cloud\Office\16.0\Common\Security]
