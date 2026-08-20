@@ -115,7 +115,7 @@ If you do not have this module installed, the Compliance Utility will try to ins
 
 ### 🔵PowerShell (optional) <a name="ms-powershell"></a>
 
-Please follow the instructions for [installing PowerShell on Windows](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.5) to install it using your preferred method if you want to use the Compliance Utility on [PowerShell 7.4](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.4) (or higher).
+Please follow the instructions for [installing PowerShell on Windows](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.5) to install it using your preferred method if you want to use the Compliance Utility on [PowerShell 7.6](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows?view=powershell-7.6) (or higher).
 
 ### 🔵Purview Information Protection module (optional) <a name="pip-module"></a>
 
