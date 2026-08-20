@@ -371,7 +371,7 @@ The [DRMEncryptProperty](https://gpsearch.azurewebsites.net/?PolicyID=11665) and
 [HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Security]
 ```
 
-The [UseOfficeForLabelling](https://docs.microsoft.com/en-us/microsoft-365/compliance/sensitivity-labels-office-apps?view=o365-worldwide#office-built-in-labeling-client-and-other-labeling-solutions) (Use the sensitivity feature in Office to apply and view sensitivity labels) and [AIPException](https://microsoft.github.io/ComplianceCxE/playbooks/AIP2MIP/AIPException/#configuring-sensitivity-labeling-client-in-m365-apps) (Use the Azure Information Protection add-in for sensitivity labeling) registry setting is purged of the following keys:
+The [UseOfficeForLabelling](https://docs.microsoft.com/en-us/microsoft-365/compliance/sensitivity-labels-office-apps?view=o365-worldwide#office-built-in-labeling-client-and-other-labeling-solutions) (Use the sensitivity feature in Office to apply and view sensitivity labels) and [AIPException](https://learn.microsoft.com/th-th/purview/sensitivity-labels-office-apps?utm_source=chatgpt.com#office-built-in-labeling-and-the-azure-information-protection-client) (Use the Azure Information Protection add-in for sensitivity labeling) registry setting is purged of the following keys:
 
 ```
 [HKCU:\SOFTWARE\Policies\Microsoft\Cloud\Office\16.0\Common\Security\Labels]
