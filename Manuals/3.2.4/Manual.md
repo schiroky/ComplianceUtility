@@ -5,7 +5,6 @@
 
 * [Description](#description)
    * [MIT License](#mit-license)
-   * [Privacy Statement](#privacy-statement)
 * [Requirements](#requirements)
    * [Internet access](#internet-access)
    * [AIPService module](#aipservice-module)
@@ -60,10 +59,6 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. 
 
-### 🔵Privacy Statement <a name="privacy-statement"></a>
-
-Your privacy is important to us. [This privacy statement](https://privacy.microsoft.com/en-US/privacystatement) explains the personal data Microsoft processes, how Microsoft processes it, and for what purposes.
-
 ## 🟦Requirements <a name="requirements"></a>
 
 Before you can use the Compliance Utility make sure that your environment fulfils the following requierements. Please update your environment if necessary.
@@ -71,7 +66,7 @@ Before you can use the Compliance Utility make sure that your environment fulfil
 The Compliance Utility supports the following PowerShell editions:
 
 * Windows [PowerShell 5.1](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-5.1) (recommended)
-* [PowerShell 7.4](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.5) (or higher)
+* [PowerShell 7.6](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows?view=powershell-7.6) (or higher)
 
 > **Note**
 >
@@ -83,13 +78,11 @@ The Compliance Utility supports the following Windows versions:
 * Windows Server 2025
 * Windows Server 2022
 * Windows Server 2019
-* Windows Server 2016
 
 The Compliance Utility supports the following Office and Microsoft 365 editions:
 
 * Microsoft 365 apps (versions listed in the table of [supported versions](https://learn.microsoft.com/en-us/officeupdates/update-history-microsoft365-apps-by-date#supported-versions) for Microsoft 365 apps)
 * Microsoft Office 2024 LTSC
-* Microsoft Office 2021 LTSC
 
 For information on support for the version of Office you are using, please refer to [Product and Services Lifecycle Information](https://learn.microsoft.com/en-us/lifecycle/products/?terms=Office).
 
@@ -263,7 +256,8 @@ If you select `[C] COLLECT`, a submenu will be expanded, and you can collapse it
    ├──[E] Endpoint URLs
    ├──[L] Labels and policies
    ├──[D] DLP rules and policies
-   └──[U] User license details
+   ├──[U] User license details
+   └──[G] Exchange IRM configuration
 ```
 
 > **Note**
@@ -308,6 +302,7 @@ ComplianceUtility
        [-CollectLabelsAndPolicies]
        [-CollectDLPRulesAndPolicies]
        [-CollectUserLicenseDetails]
+       [-CollectExchangeIRMConfiguration]
        [-SkipUpdates]
        [-CompressLogs]
        [-Menu]
@@ -499,9 +494,9 @@ The results are written to log file [UserLicenseDetails.log](#user-license-log) 
 
 ### 🔵[G] Exchange IRM configuration | -CollectExchangeIRMConfiguration <a name="exchange-irm-config"></a>
 
+This parameter collects the Exchange IRM configuration details by using the [Exchange Online PowerShell module](#exchange-online-module).
 
-
-
+The results are written to the log file [IRMConfiguration.log](#IRMConfiguration-log) in the subfolder "Collect\ExchangeIRMConfiguration" of the Logs folder.
 
 ### 🔵[Z] COMPRESS LOGS | -CompressLogs <a name="compress-logs"></a>
 
@@ -992,6 +987,18 @@ This parameter collects the [User license details](#user-license-details) by [Mi
 
 For more information, please see the following documentation:
 [Get-MgUserLicenseDetail](https://learn.microsoft.com/en-us/powershell/module/microsoft.graph.users/get-mguserlicensedetail), [Get-MgSubscribedSku](https://learn.microsoft.com/en-us/powershell/module/microsoft.graph.identity.directorymanagement/get-mgsubscribedsku) and [Product names and service plan identifiers for licensing](https://learn.microsoft.com/en-us/entra/identity/users/licensing-service-plan-reference).
+
+
+
+<li>
+
+**IRMConfiguration.log** <a name="IRMConfiguration-log"></a>
+
+</li>
+
+This parameter collects the the Information Rights Management (IRM) configuration of your organization.<br>
+
+For more information, please see the following documentation: [Get-IRMConfiguration](https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/get-irmconfiguration?view=exchange-ps)
 
 </ul>
 
