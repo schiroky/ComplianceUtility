@@ -31,6 +31,7 @@
      * [User license details](#user-license-details)
      * [Exchange IRM configuration](#exchange-irm-config)
    * [COMPRESS LOGS](#compress-logs)
+   * [UPDATE REQUIRED MODULES](#update-modules)
    * [EXIT](#exit)
 * [Script log file](#script-log-file)
 * [Log files and folders](#log-files)
@@ -238,6 +239,7 @@ ComplianceUtility:
   [P] RECORD PROBLEM
   [C] COLLECT
   [Z] COMPRESS LOGS
+  [Q] UPDATE REQUIRED MODULES
   [X] EXIT
  
 Please select an option and press enter:
@@ -246,7 +248,7 @@ Please select an option and press enter:
 > **Note**
 >
 > * For option [RESET](#reset) and [RECORD PROBLEM](#record-problem) you may run as user with local administrative privileges. Please contact your administrator if necessary.
-> * When the Compliance Utility is started for the first time and an installation of the 'Unified Labeling Support Tool' is found, it is removed.
+
 If you select `[C] COLLECT`, a submenu will be expanded, and you can collapse it by selecting option `[C] COLLECT` again: <a name="collect"></a>
 
 ```
@@ -303,8 +305,8 @@ ComplianceUtility
        [-CollectDLPRulesAndPolicies]
        [-CollectUserLicenseDetails]
        [-CollectExchangeIRMConfiguration]
-       [-SkipUpdates]
        [-CompressLogs]
+       [-UpdateModules]
        [-Menu]
        <CommonParameters>
 ```
@@ -504,15 +506,13 @@ This command line parameter should always be used at the very end of a scenario.
 
 This parameter compresses all collected log files and folders into a .zip archive, and the corresponding file is saved to your desktop. In addition, the default logs folder (`%temp%\ComplianceUtility`) is cleaned.
 
+### 🔵[Q] UPDATE REQUIRED MODULES | -UpdateModules <a name="update-modules"></a>
+
+Checks the required PowerShell modules ([AIPService](https://learn.microsoft.com/en-us/powershell/module/aipservice/?view=azureipps), [ExchangeOnlineManagement](https://www.powershellgallery.com/packages/ExchangeOnlineManagement), and [Microsoft Graph](https://learn.microsoft.com/en-us/graph/overview)). It installs missing modules and updates outdated ones from the PowerShell Gallery.
+
 ### 🔵[X] EXIT | - <a name="exit"></a>
 
 This option will asks you whether you want to exit the menu after a confirmation prompt.
-
-### 🔵- | -SkipUpdates <a name="skip-updates"></a>
-
-> [!IMPORTANT]
-> Use this parameter only if you are sure that all PowerShell modules are up to date.
-This parameter skips the update check mechanism for all entries of the [COLLECT](#collect) menu.
 
 ### 🔵- | -Menu <a name="menu"></a>
 
