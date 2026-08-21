@@ -78,12 +78,10 @@ The Compliance Utility supports the following Windows versions:
 * Windows 11
 * Windows Server 2025
 * Windows Server 2022
-* Windows Server 2019
 
 The Compliance Utility supports the following Office and Microsoft 365 editions:
 
 * Microsoft 365 apps (versions listed in the table of [supported versions](https://learn.microsoft.com/en-us/officeupdates/update-history-microsoft365-apps-by-date#supported-versions) for Microsoft 365 apps)
-* Microsoft Office 2024 LTSC
 
 For information on support for the version of Office you are using, please refer to [Product and Services Lifecycle Information](https://learn.microsoft.com/en-us/lifecycle/products/?terms=Office).
 
