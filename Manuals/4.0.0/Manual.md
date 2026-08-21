@@ -196,9 +196,9 @@ If you find an entry like the following, the installation was successful:
 
 ```
     Directory: C:\Users\<UserName>\Documents\WindowsPowerShell\Modules
-ModuleType Version    Name                     ExportedCommands
----------- -------    ----                     ----------------
-Script     4.0.0      ComplianceUtility        {ComplianceUtility, CompUtil, UnifiedLabelingSupportTool}
+ModuleType Version    Name                      ExportedCommands
+---------- -------    ----                      ----------------
+Script     4.0.0      ComplianceUtility         {ComplianceUtility, CompUtil}
 ```
 
 # 🟦Uninstall <a name="uninstall"></a>
