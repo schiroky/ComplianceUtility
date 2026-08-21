@@ -209,10 +209,10 @@ If you want to completely uninstall the Compliance Utility, you must execute the
 Uninstall-Module -Name ComplianceUtility -AllVersions
 ```
 
-If you want to uninstall a specific version, for example version 3.2.2, you must execute the following command:
+If you want to uninstall a specific version, for example version 3.2.3, you must execute the following command:
 
 ```
-Uninstall-Module -Name ComplianceUtility -RequiredVersion 3.2.2
+Uninstall-Module -Name ComplianceUtility -RequiredVersion 3.2.3
 ```
 
 If the Compliance Utility was installed manually, you also need to remove it manually by deleting its installation folder.
