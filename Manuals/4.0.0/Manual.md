@@ -13,7 +13,6 @@
    * [PowerShell](#ms-powershell)
    * [Purview Information Protection module](#pip-module)
 * [Installation](#installation)
-   * [Manual installation](#manual-installaltion)
    * [Check installation](#check-installation)
 * [Uninstall](#uninstall)
 * [User experience](#experience)
@@ -87,7 +86,7 @@ Before you can use the Compliance Utility make sure that your environment fulfil
 The Compliance Utility uses additional sources from the Internet to make its functionality fully available.
 
 > [!WARNING]
-> Unexpected errors may occur, and some features may be limited, if there is no connection to the Internet.
+> Unexpected errors may occur, and some features may be limited, if there is no Internet connection or if the connection is filtered, proxied, or otherwise restricted.
 ### 🔵AIPService module <a name="aipservice-module"></a>
 
 The [AIPService module](https://learn.microsoft.com/en-us/powershell/module/aipservice/?view=azureipps) is required to proceed the options [AIP service configuration](#aip-service-config), [Protection templates](#protection-templates), and [Endpoint URLs](#endpoint-urls) from the [COLLECT](#collect) menu.
@@ -157,28 +156,6 @@ You must set [PowerShell Gallery](https://www.powershellgallery.com) as a truste
 Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
 ```
 
-### 🔵Manual Installation <a name="manual-installaltion"></a>
-
-If you’re using the Compliance Utility in an environment that does not have Internet access, you need to proceed with the manual installation.
-
-To install the Compliance Utility manually, you must create the following folder and copy/paste all Compliance Utility files (`ComplianceUtility.psm1` and `ComplianceUtility.psd1`) into this folder:
-
-For Windows PowerShell 5.1:
-
-``` %USERPROFILE%\Documents\WindowsPowerShell\Modules\ComplianceUtility\4.0.0```
-
-For Microsoft PowerShell 7.x:
-
-``` %USERPROFILE%\Documents\PowerShell\Modules\ComplianceUtility\4.0.0```
-
-The corresponding path must be listed in the [PSModulePath environment variable](https://docs.microsoft.com/en-us/powershell/scripting/developer/module/modifying-the-psmodulepath-installation-path?view=powershell-5.1#to-view-the-psmodulepath-variable).
-
-To verify if the installation was successful, please review the [check installation](#check-installation) section.
-
-> **Note**
->
-> * Please also consider point [Allow signed PowerShell scripts](#allow-signed-powershell-scripts).
-> * Depending on which function is to be used by the Compliance Utility, any additional modules required must be downloaded and installed manually.
 ### 🔵Check installation <a name="check-installation"></a>
 
 To verify if the installation was successful, you can call the `Get-Module` cmdlet with the following parameter:
@@ -209,8 +186,6 @@ If you want to uninstall a specific version, for example version 3.2.3, you must
 ```
 Uninstall-Module -Name ComplianceUtility -RequiredVersion 3.2.3
 ```
-
-If the Compliance Utility was installed manually, you also need to remove it manually by deleting its installation folder.
 
 > **Note**
 >
