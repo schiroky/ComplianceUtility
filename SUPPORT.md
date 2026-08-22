@@ -96,26 +96,3 @@ For new issues, file your bug or feature request as a new Issue. Please describe
     ```
 
     **Resolution:** To resolve this problem, you must remove this Group Policy setting or configure a setting that allows scripts to run. Please request assistance from your administrator to do this. Please also read [Use Group Policy to Manage Execution Policy](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-5.1#use-group-policy-to-manage-execution-policy) and [Set-ExecutionPolicy](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.security/set-executionpolicy?view=powershell-5.1).
-
-* **Installing PowerShellGet module cause an error**
-
-    This applies only to a manual installation. You may see the following error:
-
-    ```
-    PackageManagement\Install-Package : No match was found for the specified search criteria and module name 'PowerShellGet'.
-    Try Get-PSRepository to see all available registered module repositories.
-    At C:\Program Files\WindowsPowerShell\Modules\PowerShellGet\1.0.0.1\PSModule.psm1:1772 char:21
-    + ...          $null = PackageManagement\Install-Package @PSBoundParameters
-    +                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        + CategoryInfo : ObjectNotFound: (Microsoft.Power....InstallPackage:InstallPackage) [Install-Package],
-          Exception
-        + FullyQualifiedErrorId : NoMatchFoundForCriteria,Microsoft.PowerShell.PackageManagement.Cmdlets.
-          InstallPackage
-    ```
-
-    **Resolution:** To resolve this issue, you must run the following Windows PowerShell command to register the default module repositories:
-
-    ```
-    PS C:\> Register-PSRepository -Default
-    ```
-    
