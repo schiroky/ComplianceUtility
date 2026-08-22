@@ -1,8 +1,8 @@
 ## 🟦Code of Conduct
 
-### 🔵Our Standards
+### 🔵Standards
 
-We are committed to providing a respectful, professional, and welcoming environment for everyone participating in this project.
+I am committed to providing a respectful, professional, and welcoming environment for everyone participating in this project.
 
 Participants are expected to:
 
@@ -32,7 +32,7 @@ Project maintainers are responsible for clarifying and enforcing these standards
 
 If you experience or observe unacceptable behavior, please report it privately to the project maintainer at **[conduct@compliance-utility.com](mailto:conduct@compliance-utility.com)**.
 
-Please do not report Code of Conduct violations through public GitHub issues or discussions.
+**Please do not report Code of Conduct violations through public GitHub issues or discussions.**
 
 Reports will be reviewed promptly and handled as confidentially as reasonably possible. Information about a report will only be shared when necessary to investigate or address the reported behavior.
 
