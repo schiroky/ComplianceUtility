@@ -1,6 +1,6 @@
 ## 🟦Security
 
-Microsoft takes the security of our software products and services seriously, which includes all source code repositories managed through our GitHub organizations, which include [Microsoft](https://github.com/Microsoft), [Azure](https://github.com/Azure), [DotNet](https://github.com/dotnet), [AspNet](https://github.com/aspnet), [Xamarin](https://github.com/xamarin), and [our GitHub organizations](https://opensource.microsoft.com/).
+Microsoft takes the security of software products and services seriously, which includes all source code repositories managed through GitHub organizations, which include [Microsoft](https://github.com/Microsoft), [Azure](https://github.com/Azure), [DotNet](https://github.com/dotnet), [AspNet](https://github.com/aspnet), [Xamarin](https://github.com/xamarin), and [our GitHub organizations](https://opensource.microsoft.com/).
 
 If you believe you have found a security vulnerability in any Microsoft-owned repository that meets [Microsoft's definition of a security vulnerability](https://docs.microsoft.com/en-us/previous-versions/tn-archive/cc751383(v=technet.10)), please report it as described below.
 
@@ -14,7 +14,7 @@ If you prefer to submit without logging in, send email to [secure@microsoft.com]
 
 You should receive a response within 24 hours. If for some reason you do not, please follow up via email to ensure we received your original message. Additional information can be found at [microsoft.com/msrc](https://www.microsoft.com/msrc). 
 
-Please include the requested information listed below (as much as you can provide) ton better understand the nature and scope of the potential issue:
+Please include the requested information listed below (as much as you can provide) to better understand the nature and scope of the potential issue:
 
   * Type of issue (e.g. buffer overflow, SQL injection, cross-site scripting, etc.)
   * Full paths of source file(s) related to the manifestation of the issue
@@ -24,9 +24,9 @@ Please include the requested information listed below (as much as you can provid
   * Proof-of-concept or exploit code (if possible)
   * Impact of the issue, including how an attacker might exploit the issue
 
-This information will help triage your report more quickly.
+This information will help triage the report more quickly.
 
-If you are reporting for a bug bounty, more complete reports can contribute to a higher bounty award. Please visit our [Microsoft Bug Bounty Program](https://microsoft.com/msrc/bounty) page for more details about active programs.
+If you are reporting for a bug bounty, more complete reports can contribute to a higher bounty award. Please visit [Microsoft Bug Bounty Program](https://microsoft.com/msrc/bounty) page for more details about active programs.
 
 ## 🟦Preferred Languages
 
