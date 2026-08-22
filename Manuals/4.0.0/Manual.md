@@ -82,8 +82,6 @@ Before you can use the Compliance Utility make sure that your environment fulfil
 
 * Microsoft 365 apps (versions listed in the table of [supported versions](https://learn.microsoft.com/en-us/officeupdates/update-history-microsoft365-apps-by-date#supported-versions) for Microsoft 365 apps)
 
-For information on support for the version of Office you are using, please refer to [Product and Services Lifecycle Information](https://learn.microsoft.com/en-us/lifecycle/products/?terms=Office).
-
 ### 🔵Internet access <a name="internet-access"></a>
 
 The Compliance Utility uses additional sources from the Internet to make its functionality fully available.
