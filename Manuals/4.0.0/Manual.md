@@ -75,8 +75,8 @@ Before you can use the Compliance Utility make sure that your environment fulfil
 
 **The Compliance Utility supports the following Windows versions:**
 
-* Microsoft Windows client (versions listed at [Supported versions of Windows client](https://learn.microsoft.com/en-us/windows/release-health/supported-versions-windows-client).
-* Microsoft Windows Server (versions listed at [Windows Server release information](https://learn.microsoft.com/en-us/windows/release-health/windows-server-release-info).
+* Microsoft Windows client (versions listed at [Supported versions of Windows client](https://learn.microsoft.com/en-us/windows/release-health/supported-versions-windows-client)).
+* Microsoft Windows Server (versions listed at [Windows Server release information](https://learn.microsoft.com/en-us/windows/release-health/windows-server-release-info)).
 
 **The Compliance Utility supports the following Microsoft 365 editions:**
 
