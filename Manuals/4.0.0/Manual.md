@@ -104,13 +104,13 @@ If this module is missing or outdated, run [ComplianceUtility -UpdateModules](#u
 
 The [Graph PowerShell module](https://learn.microsoft.com/en-us/graph/overview) is required to proceed the option [User license details](#user-license-details) from the [COLLECT](#collect) menu.
 
-If you do not have this module installed, the Compliance Utility will try to install the current version from [PowerShell Gallery](https://www.powershellgallery.com/packages/Microsoft.Graph).
+If this module is missing or outdated, run [ComplianceUtility -UpdateModules](#update-modules) to install it from the [PowerShell Gallery](https://www.powershellgallery.com/packages/Microsoft.Graph).
 
 ### 🔵Exchange Online PowerShell module <a name="exchange-online-module"></a>
 
 The [Exchange Online PowerShell module](https://learn.microsoft.com/en-us/powershell/exchange/exchange-online-powershell-v2?view=exchange-ps#release-notes) is required to proceed the options [Labels and policies](#labels-and-policies), [DLP rules and policies](#dlp-rules-and-policies) and [Exchange IRM configuration](#exchange-irm-config) from the menu [COLLECT](#collect).
 
-If you do not have this module installed, the Compliance Utility will try to install the current version from [PowerShell Gallery](https://www.powershellgallery.com/packages/ExchangeOnlineManagement).
+If this module is missing or outdated, run [ComplianceUtility -UpdateModules](#update-modules) to install it from the [PowerShell Gallery](https://www.powershellgallery.com/packages/ExchangeOnlineManagement).
 
 ### 🔵PowerShell (optional) <a name="ms-powershell"></a>
 
