@@ -85,12 +85,6 @@ For new issues, file your bug or feature request as a new Issue. Please describe
 
     **Resolution:** You need to [enable long paths on Windows.](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=registry#registry-setting-to-enable-long-paths)
 
-* **Set-ExecutionPolicy has no effect**
-
-    This applies only to a manual installation: If you downloaded the Compliance Utility from its [GitHub website](https://aka.ms/ComplianceUtility/Latest), it will be extended by an [Alternate Data Streams in NTFS](https://blogs.technet.microsoft.com/askcore/2013/03/24/alternate-data-streams-in-ntfs) (ADS). If the corresponding website in the ADS is not trusted in your environment, the PowerShell command "Set-ExecutionPolicy" has no effect.
-
-    **Resolution:** Either you right-click the downloaded script files and "Unblock" it, or you add the corresponding website to your trusted site settings.
-
 * **Script does not start and returns an error**
 
     If you see this message in a PowerShell command window, you are most likely affected by the Windows® Group Policy setting "Turn on Script Execution":
