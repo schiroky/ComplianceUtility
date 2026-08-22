@@ -64,7 +64,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 Before you can use the Compliance Utility make sure that your environment fulfils the following requierements. Please update your environment if necessary.
 
-The Compliance Utility supports the following PowerShell editions:
+The Compliance Utility supports the following **PowerShell editions**:
 
 * Windows [PowerShell 5.1](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-5.1) (recommended)
 * [PowerShell 7.6](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows?view=powershell-7.6) (or higher)
@@ -73,12 +73,12 @@ The Compliance Utility supports the following PowerShell editions:
 >
 > [Differences between Windows PowerShell 5.1 and PowerShell 7.x](https://learn.microsoft.com/en-us/powershell/scripting/whats-new/differences-from-windows-powershell?view=powershell-7.4)
 
-The Compliance Utility supports the following Windows versions:
+The Compliance Utility supports the following **Windows versions**:
 
 * Microsoft Windows client (versions listed at [Supported versions of Windows client](https://learn.microsoft.com/en-us/windows/release-health/supported-versions-windows-client).
 * Microsoft Windows Server (versions listed at [Windows Server release information](https://learn.microsoft.com/en-us/windows/release-health/windows-server-release-info).
 
-The Compliance Utility supports the following Office and Microsoft 365 editions:
+The Compliance Utility supports the following **Microsoft 365 editions**:
 
 * Microsoft 365 apps (versions listed in the table of [supported versions](https://learn.microsoft.com/en-us/officeupdates/update-history-microsoft365-apps-by-date#supported-versions) for Microsoft 365 apps)
 
