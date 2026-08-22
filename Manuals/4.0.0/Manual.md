@@ -75,9 +75,8 @@ The Compliance Utility supports the following PowerShell editions:
 
 The Compliance Utility supports the following Windows versions:
 
-* Windows 11
-* Windows Server 2025
-* Windows Server 2022
+* Microsoft Windows client (versions listed at [Supported versions of Windows client](https://learn.microsoft.com/en-us/windows/release-health/supported-versions-windows-client).
+* Microsoft Windows Server (versions listed at [Windows Server release information](https://learn.microsoft.com/en-us/windows/release-health/windows-server-release-info).
 
 The Compliance Utility supports the following Office and Microsoft 365 editions:
 
