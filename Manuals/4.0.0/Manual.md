@@ -79,7 +79,7 @@ Before you can use the Compliance Utility make sure that your environment fulfil
 
 **The Compliance Utility supports the following Microsoft 365 editions:**
 
-* Microsoft 365 apps (versions listed in the table of [supported versions](https://learn.microsoft.com/en-us/officeupdates/update-history-microsoft365-apps-by-date#supported-versions) for Microsoft 365 apps)
+* Microsoft 365 (desktop) apps (versions listed in the table of [supported versions](https://learn.microsoft.com/en-us/officeupdates/update-history-microsoft365-apps-by-date#supported-versions) for Microsoft 365 apps)
 
 ### 🔵Internet access <a name="internet-access"></a>
 
