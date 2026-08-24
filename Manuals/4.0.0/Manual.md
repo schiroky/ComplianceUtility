@@ -469,7 +469,7 @@ The results are written to log file [UserLicenseDetails.log](#user-license-log) 
 
 This parameter collects the Exchange IRM configuration details by using the [Exchange Online PowerShell module](#exchange-online-module).
 
-The results are written to the log file [IRMConfiguration.log](#IRMConfiguration-log) in the subfolder "Collect\ExchangeIRMConfiguration" of the Logs folder.
+The results are written to the log file [IRMConfiguration.log](#IRMConfiguration-log) and [IRMConfiguration.xml](#IRMConfiguration-log) in the subfolder "Collect\ExchangeIRMConfiguration" of the Logs folder.
 
 ### 🔵[Z] COMPRESS LOGS | -CompressLogs <a name="compress-logs"></a>
 
@@ -963,7 +963,7 @@ For more information, please see the following documentation:
 
 <li>
 
-**IRMConfiguration.log** <a name="IRMConfiguration-log"></a>
+**IRMConfiguration.log/IRMConfiguration.xml** <a name="IRMConfiguration-log"></a>
 
 </li>
 
