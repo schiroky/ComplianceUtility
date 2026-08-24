@@ -1,121 +1,41 @@
 ﻿#Requires -Version 5.1
 
-# Copyright (c) Microsoft Corporation
+# Copyright (c) Claus Schiroky
 # Licensed under the MIT License
 
 <# Variables #>
-$Global:strVersion = "3.2.2" <# Version #> 
+$Global:strVersion = "4.0.0" <# Version #>
 $Global:strDefaultWindowTitle = $Host.UI.RawUI.WindowTitle <# Caching window title #>
 $Global:host.UI.RawUI.WindowTitle = "Compliance Utility ($Global:strVersion)" <# Set window title #>
 $Global:bolMenuCollectExtended = $false <# Variable for COLLECT menu handling #>
-$Global:bolCommingFromMenu = $false <# Variable for menu handling inside functions #>
-$Global:bolSkipRequiredUpdates = $false <# Variable for handling updates #>
+$script:RequiredModuleAvailability = @{} <# Cache local prerequisite checks for the current session #>
+$Global:bolComingFromMenu = $false <# Variable for menu handling inside functions #>
 $Global:FormatEnumerationLimit = -1 <# Variable to show full Format-List for arrays #>
 
 Function fncInitialize{
 
     <# Variable for user log path #>
-    $Global:strUserLogPath | Out-Null
+    $Global:strTempFolder = $env:TEMP
+    $Global:strUserLogPath = Join-Path -Path $Global:strTempFolder -ChildPath "ComplianceUtility"
 
-    <# Detect Windows #>
-    If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
+    <# Variable for elevated permission check #>
+    $currentWindowsIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $currentWindowsPrincipal = [System.Security.Principal.WindowsPrincipal]::new($currentWindowsIdentity)
+    $Global:bolRunningPrivileged = $currentWindowsPrincipal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 
-        <# Variable for Windows version #>
-        $Global:strOSVersion = (Get-CimInstance Win32_OperatingSystem).Caption
+    <# Variable for Windows version #>
+    $Global:strOSVersion = (Get-CimInstance Win32_OperatingSystem).Caption
+    
+    <# Logging Windows edition and version #>
+    fncLogging -strLogFunction "fncInitialize" -strLogDescription "OS edition" -strLogValue $Global:strOSVersion
+    fncLogging -strLogFunction "fncInitialize" -strLogDescription "OS version" -strLogValue $([System.Environment]::OSVersion.Version)
 
-        <# Check for supported Windows versions #>
-        If ($Global:strOSVersion -like "*Windows 10*" -Or
-            $Global:strOSVersion -like "*Windows 11*" -Or
-            $Global:strOSVersion -like "*Server 2016*" -Or
-            $Global:strOSVersion -like "*Server 2019*" -Or
-            $Global:strOSVersion -like "*Server 2022*" -Or
-            $Global:strOSVersion -like "*Server 2025*"){
-
-            <# Variables #>
-            $Global:strTempFolder = (Get-Item Env:"Temp").Value <# User temp folder #>
-            $Global:strUserLogPath = New-Item -ItemType Directory -Force -Path "$Global:strTempFolder\ComplianceUtility" <# Default user log path #>
-            $Global:bolRunningPrivileged = [bool](([System.Security.Principal.WindowsIdentity]::GetCurrent()).Groups -match "S-1-5-32-544") <# Control variable for privilege checks #>
-            
-        }
-        Else { <# Actions, when running on unsupported Windows #>
-
-            <# Variable #>
-            $Global:strOSVersion = $null
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncInitialize" -strLogDescription "Unsupported operating system" -strLogValue $true
-
-            <# Output #>
-            Write-ColoredOutput Red "ATTENTION: The 'Compliance Utility' does not support the operating system you're using.`nPlease ensure to use one of the following supported operating systems:`nMicrosoft Windows 11, Windows 10, Windows Server 2025, Windows Server 2022, Windows Server 2019, Windows Server 2016, and Windows Server 2012/R2.`n"
-
-            <# Set back window title #>
-            $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
-
-            <# Exit #>
-            Break
-
-        }
-
-        <# Logging Windows edition and version #>
-        fncLogging -strLogFunction "fncInitialize" -strLogDescription "OS edition" -strLogValue $Global:strOSVersion 
-        fncLogging -strLogFunction "fncInitialize" -strLogDescription "OS version" -strLogValue $([System.Environment]::OSVersion.Version)
-
-    }
-
-    <# Detect macOS #>
-    If ($IsMacOS -eq $true) {
-
-        <# Variables #>
-        $Global:strOSVersion = $(sw_vers -productVersion) <# Apple macOS version #>
-
-        <# Check for unsupported macOS #>
-        If ($Global:strOSVersion -lt "16.89") {
-
-            <# Variable #>
-            $Global:strOSVersion = $null
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncInitialize" -strLogDescription "Unsupported operating system" -strLogValue $true
-
-            <# Output #>
-            Write-ColoredOutput Red "ATTENTION: The 'Compliance Utility' does not support the operating system you're using.`nPlease ensure to use a supported operating system:`nApple macOS 16.89 (Ventura ) or higher.`n"
-
-            <# Set back window title #>
-            $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
-
-            <# Exit #>
-            Break
-
-        }
-        Else { <# Actions on supported macOS versions #>
-
-            <# Variable #>
-            $Global:strUserLogPath = New-Item -ItemType Directory -Force -Path "$(printenv HOME)\Documents\ComplianceUtility" <# Default user log path #>
-            
-            <# Detect if user is in admin group (80) #>
-            If ($(id -G) -match "80"){
-
-                <# Control variable for privileges checks #>
-                $Global:bolRunningPrivileged = $true
-
-            }
-            Else {
-
-                <# Control variable for privileges checks #>
-                $Global:bolRunningPrivileged = $false
-
-            }
-
-        }
-
-        <# Logging: macOS #>
-        fncLogging -strLogFunction "fncInitialize" -strLogDescription "OS edition" -strLogValue "Apple $(sw_vers -productName) ($(uname -s))"
-        fncLogging -strLogFunction "fncInitialize" -strLogDescription "OS version" -strLogValue $Global:strOSVersion
-        fncLogging -strLogFunction "fncInitialize" -strLogDescription "OS kernel" -strLogValue $(uname -v)
-
-    }
-
-    <# Logging: Default entries for Windows and macOS #>
+    <# Logging Windows codepage#>
+    fncLogging -strLogFunction "fncInitialize" -strLogDescription "Console input encoding" -strLogValue "$([System.Console]::InputEncoding.EncodingName) (CodePage $([System.Console]::InputEncoding.CodePage))"
+    fncLogging -strLogFunction "fncInitialize" -strLogDescription "Console output encoding" -strLogValue "$([System.Console]::OutputEncoding.EncodingName) (CodePage $([System.Console]::OutputEncoding.CodePage))"
+    fncLogging -strLogFunction "fncInitialize" -strLogDescription "Windows default encoding" -strLogValue "$([System.Text.Encoding]::Default.EncodingName) (CodePage $([System.Text.Encoding]::Default.CodePage))"
+ 
+    <# Logging: Default entries for Windows #>
     fncLogging -strLogFunction "fncInitialize" -strLogDescription "OS 64-Bit" -strLogValue $([System.Environment]::Is64BitOperatingSystem) <# Architecture #>
     fncLogging -strLogFunction "fncInitialize" -strLogDescription "Module version" -strLogValue "$Global:strVersion" <# Module version #>
     fncLogging -strLogFunction "fncInitialize" -strLogDescription "Username" -strLogValue $([System.Environment]::UserName) <# Username #>
@@ -133,14 +53,14 @@ Function fncInitialize{
 
     <# Detect PowerShell Destkop 5.1 #>
     If ($PSVersionTable.PSEdition.ToString() -eq "Desktop" -and [Version]::new($PSVersionTable.PSVersion.Major, $PSVersionTable.PSVersion.Minor) -ne [Version]::new("5.1")) {
-   
+
         <# Set unsupported PowerShell #>
         $Global:bolSupportedPowerShell = $false
 
     }
 
-    <# Detect PowerShell Core 7.4 (or less) #>
-    If ($PSVersionTable.PSEdition.ToString() -eq "Core" -and [Version]::new($PSVersionTable.PSVersion.Major, $PSVersionTable.PSVersion.Minor) -lt [Version]::new("7.4")) {
+    <# Detect PowerShell Core 7.6 (or less) #>
+    If ($PSVersionTable.PSEdition.ToString() -eq "Core" -and [Version]::new($PSVersionTable.PSVersion.Major, $PSVersionTable.PSVersion.Minor) -lt [Version]::new("7.6")) {
 
         <# Set unsupported PowerShell #>
         $Global:bolSupportedPowerShell = $false
@@ -154,13 +74,13 @@ Function fncInitialize{
         fncLogging -strLogFunction "fncInitialize" -strLogDescription "Supported PowerShell version" -strLogValue $false
 
         <# Output #>
-        Write-ColoredOutput Red "ATTENTION: The version of PowerShell that is required by the 'Compliance Utility' does not match the currently running version of PowerShell $($PSVersionTable.PSVersion).`n"
+        Write-ColoredOutput Red "ATTENTION: The version of PowerShell that is required by the Compliance Utility does not match the currently running version of PowerShell $($PSVersionTable.PSVersion).`n"
 
         <# Set back window title to default #>
         $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
 
         <# Exit #>
-        Break
+        Return
 
     }
 
@@ -174,45 +94,41 @@ Function ComplianceUtility {
 
     <#
     .SYNOPSIS
-        The 'Compliance Utility' is a powerful tool that helps troubleshoot and diagnose sensitivity labels, policies, settings and more. Whether you need to fix issues or reset configurations, this tool has you covered.
+        The Compliance Utility is a powerful tool that helps troubleshoot and diagnose sensitivity labels, policies, settings and more. Whether you need to fix issues or reset configurations, this tool gives you everything you need.
 
         .DESCRIPTION
-        Have you ever used the Sensitivity button in a Microsoft 365 App or applied a sensitivity label by right-clicking on a file? If so, you've either used the Office's built-in labeling experience or the Purview Information Protection labeling client. If something is not working as expected with your DLP policies, sensitivity labels or you don't see any labels at all the 'Compliance Utility' will help you.
+        Have you ever used the sensitivity button in a Microsoft 365 app or applied a sensitivity label by right-clicking on a file? If so, you've either used the Office's built-in labeling experience or the Purview Information Protection labeling client. If something is not working as expected with your DLP policies, sensitivity labels or you don't see any labels at all the Compliance Utility will help you.
 
         INTERNET ACCESS
-        The 'Compliance Utility' uses additional sources from the Internet to make its functionality fully available.
+        The Compliance Utility uses additional sources from the Internet to make its functionality fully available.
+        
         WARNING: Unexpected errors may occur, and some features may be limited, if there is no connection to the Internet.
 
     .NOTES
         MIT LICENSE
-        
-        Copyright (c) Microsoft Corporation.
+
+        Copyright (c) Claus Schiroky.
 
         Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
         The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
         THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-        
+
         VERSION
-        3.2.2
-        
+        4.0.0
+
         CREATE DATE
-        07/17/2025
+        21/08/2026
 
         AUTHOR
         Claus Schiroky
-        Modern Solutions & Support - EMEA Modern Work Team
-        Microsoft Deutschland GmbH
 
-        GITHUB REPOSITORY
-        https://aka.ms/ComplianceUtility
-
-        PRIVACY STATEMENT
-        https://privacy.microsoft.com/PrivacyStatement
+        HOMEPAGE
+        https://compliance-utility.com
 
         COPYRIGHT
-        Copyright (c) Microsoft Corporation.
+        Copyright (c) Claus Schiroky.
 
     .PARAMETER Information
         This shows syntax, description and version information.
@@ -230,18 +146,16 @@ Function ComplianceUtility {
 
         Valid arguments are: "Default", or "Silent".
 
-        On Microsoft Windows:
-
         Note:
-        - Reset with the default argument will not reset all settings, but only user-specific settings if you run PowerShell with user privileges. This is sufficient in most cases to reset Microsoft 365 Apps, while a complete reset is useful for all other applications.
-        - If you want a complete reset, you need to run the 'Compliance Utility' in an administrative PowerShell window as a user with local administrative privileges.
+        - Reset with the default argument will not reset all settings, but only user-specific settings if you run PowerShell with user privileges. This is sufficient in most cases to reset Microsoft 365 apps, while a complete reset is useful for all other applications.
+        - If you want a complete reset, you need to run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges.
 
         Default:
 
         When you run PowerShell with user privileges, this argument removes all relevant policies, labels and settings:
 
         ComplianceUtility -Reset Default
-       
+
         With the above command the following registry keys are cleaned up:
 
         [HKCU:\SOFTWARE\Classes\Local Settings\Software\Microsoft\MSIPC]
@@ -262,7 +176,7 @@ Function ComplianceUtility {
 
         [HKCU:\SOFTWARE\Policies\Microsoft\Cloud\Office\16.0\Common\Security]
         [HKCU:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\Security]
-        [HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Security]        
+        [HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Security]
 
         The UseOfficeForLabelling (Use the Sensitivity feature in Office to apply and view sensitivity labels) and AIPException (Use the Azure Information Protection add-in for sensitivity labeling) registry setting is purged of the following keys:
 
@@ -286,9 +200,9 @@ Function ComplianceUtility {
         %LOCALAPPDATA%\Microsoft\MSIPC
         %LOCALAPPDATA%\Microsoft\DRM
 
-        The Clear-AIPAuthentication cmdlet is used to reset user settings, if a Purview Information Protection labeling client (or an 'Azure Information Protection unified labeling client') installation is found.
+        The Clear-AIPAuthentication cmdlet is used to reset user settings, if a Purview Information Protection labeling client installation is found.
 
-        When you run the 'Compliance Utility' in an administrative PowerShell window as a user with local administrative privileges, the following registry keys are cleaned up in addition:
+        When you run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges, the following registry keys are cleaned up in addition:
 
         [HKLM:\SOFTWARE\Wow6432Node\Microsoft\MSIPC]
         [HKLM:\SOFTWARE\Microsoft\MSIPC]
@@ -308,65 +222,25 @@ Function ComplianceUtility {
 
         You can also review the Script.log file for errors of silent reset.
 
-        On Apple macOS:
-
-        The following file folders will be cleaned with Default argument:
-
-        ~/Library/Containers/com.microsoft.Word/Data/Library/Application Support/Microsoft/Office/CLP
-        ~/Library/Containers/com.microsoft.Excel/Data/Library/Application Support/Microsoft/Office/CLP
-        ~/Library/Containers/com.microsoft.PowerPoint/Data/Library/Application Support/Microsoft/Office/CLP
-        ~/Library/Containers/com.microsoft.Outlook/Data/Library/Application Support/Microsoft/Office/CLP
-        ~/Library/Containers/com.microsoft.OneNote/Data/Library/Application Support/Microsoft/Office/CLP
-        ~/Library/Containers/com.microsoft.Word/Data/Library/Application Support/Microsoft/MIPSDK/mip
-        ~/Library/Containers/com.microsoft.Excel/Data/Library/Application Support/Microsoft/MIPSDK/mip
-        ~/Library/Containers/com.microsoft.PowerPoint/Data/Library/Application Support/Microsoft/MIPSDK/mip
-        ~/Library/Containers/com.microsoft.Outlook/Data/Library/Application Support/Microsoft/MIPSDK/mip
-        ~/Library/Containers/com.microsoft.OneNote/Data/Library/Application Support/Microsoft/MIPSDK/mip
-        ~/Library/Containers/com.microsoft.Word/Data/Library/Logs
-        ~/Library/Containers/com.microsoft.Excel/Data/Library/Logs
-        ~/Library/Containers/com.microsoft.PowerPoint/Data/Library/Logs
-        ~/Library/Containers/com.microsoft.Outlook/Data/Library/Logs
-        ~/Library/Containers/com.microsoft.OneNote/Data/Library/Logs
-        ~/Library/Containers/com.microsoft.protection.rms-sharing-mac/Data/Library/Logs
-        ~/Library/Group Containers/UBF8T346G9.Office/mip_policy/mip/logs
-        
-        Silent:
-
-        This command line parameter argument does the same as "-Reset Default", but does not print any output - unless an error occurs when attempting to reset:
-
-        ComplianceUtility -Reset Silent
-
-        If a silent reset triggers an error, you can use the additional parameter "-Verbose" to find out more about the cause of the error:
-
-        ComplianceUtility -Reset Silent -Verbose
-
-        You can also review the Script.log file for errors of silent reset.
-
     .PARAMETER RecordProblem
         IMPORTANT: Before you proceed with this option, please close all open applications.
 
-        As a first step, this parameter activates the required logging and then prompts you to reproduce the problem. While you’re doing so, the 'Compliance Utility' collects and records data. Once you have reproduced the problem, all collected files will be stored into the default logs folder (on Windows: '%temp%\ComplianceUtility', on macOS: '~/Documents/ComplianceUtility'). Every time you call this option, a new unique subfolder will be created in the logs-folder that reflects the date and time when it was created.
+        As a first step, this parameter activates the required logging and then prompts you to reproduce the problem. While you’re doing so, the Compliance Utility collects and records data. Once you have reproduced the problem, all collected files will be stored into the default logs folder ('%temp%\ComplianceUtility'). Every time you call this option, a new unique subfolder will be created in the logs-folder that reflects the date and time when it was created.
 
-        In the event that you accidentally close the PowerShell window while logging is enabled, the 'Compliance Utility' disables logging the next time you start it.
+        In the event that you accidentally close the PowerShell window while logging is enabled, the Compliance Utility disables logging the next time you start it.
 
-        Note (for Windows user):
-        - Neither CAPI2 or AIP event logs nor filter drivers are recorded if the 'Compliance Utility' is not run in an administrative PowerShell window as a user with local administrative privileges.
-
-        Note (for Apple macOS user):
-        - When collecting basic system information, the message "'Terminal' wants to access data from other applications" may appear. Since no personal information is collected, only hardware and software data, it has no effect on how you confirm the message.
+        Note:
+        - Neither CAPI2 or AIP event logs nor filter drivers are recorded if the Compliance Utility is not run in an administrative PowerShell window as a user with local administrative privileges.
 
     .PARAMETER CollectAIPServiceConfiguration
         This parameter collects your AIP service configuration information (e.g. SuperUsers or OnboardingControlPolicy, etc.) by using the AIPService module.
 
         The results are written to the log file AIPServiceConfiguration.log in the subfolder "Collect" of the Logs folder.
-        
-        Note (for Windows user):
-        - You must run the 'Compliance Utility' in an administrative PowerShell window as a user with local administrative privileges to continue with this option. Please contact your administrator if necessary.
+
+        Note:
+        - You must run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges to continue with this option. Please contact your administrator if necessary.
         - You need to know your Microsoft 365 global administrator account information to proceed, as you will be asked for your credentials.
         - The AIPService module does not yet support PowerShell 7.x. Therefore, unexpected errors may occur because the AIPService module is executed in compatibility mode in PowerShell 7.x.
-
-        Note (for Apple macOS user):
-        - This parameter is not available. It would require the AIPService module, which is not supported on PowerShell 7.x.
 
     .PARAMETER CollectProtectionTemplates
         This parameter collects protection templates of your tenant by using the AIPService module.
@@ -375,13 +249,10 @@ Function ComplianceUtility {
 
         TIP: You can use this feature to create a backup copy of your protection templates.
 
-        Note (for Windows user):
-        - You must run the 'Compliance Utility' in an administrative PowerShell window as a user with local administrative privileges to continue with this option. Please contact your administrator if necessary.
+        Note:
+        - You must run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges to continue with this option. Please contact your administrator if necessary.
         - You need to know your Microsoft 365 global administrator account information to proceed, as you will be asked for your credentials.
         - The AIPService module does not yet support PowerShell 7.x. Therefore, unexpected errors may occur because the AIPService module is executed in compatibility mode in PowerShell 7.x.
-
-        Note (for Apple macOS user):
-        - This parameter is not available. It would require the AIPService module, which is not supported on PowerShell 7.x.
 
     .PARAMETER CollectEndpointURLs
         This parameter collects important endpoint URLs. The URLs are taken from your local registry or your tenant's AIP service configuration information (by using the AIPService module), and extended by additional relevant URLs.
@@ -389,7 +260,7 @@ Function ComplianceUtility {
         In a first step, this parameter is used to check whether you can access the URL. In a second step, the issuer of the corresponding certificate of the URL is collected. This process is represented by an output with the Tenant Id, Endpoint name, URL, and Issuer of the certificate. For example:
 
         --------------------------------------------------
-        Tenant Id: 48fc04bd-c84b-44ac-b7991b7-a4c5eefd5ac1
+        Tenant Id: 48fc03bd-c84b-44ac-b7761b7-a4c5eefd5ac1
         --------------------------------------------------
 
         Endpoint: UnifiedLabelingDistributionPointUrl
@@ -398,25 +269,22 @@ Function ComplianceUtility {
 
         In addition, results are written into log file EndpointURLs.log in the subfolder "Collect" of the Logs folder.
 
-        Note (for Windows user):
-        - You must run the 'Compliance Utility' in an administrative PowerShell window as a user with local administrative privileges to continue with this option, if the corresponding Microsoft 365 App is not bootstraped. Please contact your administrator if necessary.
+        Note:
+        - You must run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges to continue with this option, if the corresponding Microsoft 365 app is not bootstraped. Please contact your administrator if necessary.
         - You need to know your Microsoft 365 global administrator account information to proceed, as you will be asked for your credentials.
         - The AIPService module does not yet support PowerShell 7.x. Therefore, unexpected errors may occur because the AIPService module is executed in compatibility mode in PowerShell 7.x.
-
-        Note (for Apple macOS user):
-        - This parameter is not available. It would require the AIPService module, which is not supported on PowerShell 7.x.       
 
     .PARAMETER CollectLabelsAndPolicies
         This parameter collects Information Protection labels, policies (with detailled actions and rules), auto-label policies and rules from your Microsoft Purview compliance portal by using the Exchange Online PowerShell module.
 
-        The results are written to the log files Labels.xml, LabelsDetailedActions.xml, LabelPolicies.xml, LabelRules.xml, AutoLabelPolicies.xml and AutoLabelRules.xml in the subfolder "Collect\LabelsAndPolicies" of the Logs folder, and on Windows you can also have a CLP subfolder with the Office CLP policy.
+        The results are written to the log files Labels.xml, LabelsDetailedActions.xml, LabelPolicies.xml, LabelRules.xml, AutoLabelPolicies.xml and AutoLabelRules.xml in the subfolder "Collect\LabelsAndPolicies" of the Logs folder, and you can also have a CLP subfolder with the Office CLP policy.
 
         TIP: You can use the resulting log file to create exact copies of the label and policy settings for troubleshooting purposes, e.g. in test environments.
 
         Note:
-        - You must run the 'Compliance Utility' in an administrative PowerShell window as a user with local administrative privileges to continue with this option. Please contact your administrator if necessary.
+        - You must run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges to continue with this option. Please contact your administrator if necessary.
         - You need to know your Microsoft 365 global administrator account information to proceed with this option, as you will be asked for your credentials.
-        - The Microsoft Exchange Online Management module is required to proceed this option. If you do not have this module installed, 'Compliance Utility' will try to install it from PowerShell Gallery.
+        - The Microsoft Exchange Online Management module is required. Run ComplianceUtility -UpdateModules to install missing or update outdated modules.
 
     .PARAMETER CollectDLPRulesAndPolicies
         This parameter collects DLP rules and policies, sensitive information type details, rule packages, keyword dictionaries and exact data match schemas from the Microsoft Purview compliance portal by using the Exchange Online PowerShell module.
@@ -424,9 +292,9 @@ Function ComplianceUtility {
         The results are written to the log files DlpPolicy.xml, DlpRule.xml, DlpPolicyDistributionStatus.xml, DlpSensitiveInformationType.xml, DlpSensitiveInformationTypeRulePackage.xml, DlpKeywordDictionary.xml and DlpEdmSchema.xml in the subfolder "Collect\DLPRulesAndPolicies" of the Logs folder.
 
         Note:
-        - You must run the 'Compliance Utility' in an administrative PowerShell window as a user with local administrative privileges to continue with this option. Please contact your administrator if necessary.
+        - You must run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges to continue with this option. Please contact your administrator if necessary.
         - You need to know your Microsoft 365 global administrator account information to proceed with this option, as you will be asked for your credentials.
-        - The Microsoft Exchange Online Management module is required to proceed this option. If you do not have this module installed, 'Compliance Utility' will try to install it from PowerShell Gallery.
+        - The Microsoft Exchange Online Management module is required. Run ComplianceUtility -UpdateModules to install missing or update outdated modules.
 
     .PARAMETER CollectUserLicenseDetails
         This parameter collects the user license details by the Graph PowerShell module.
@@ -435,20 +303,29 @@ Function ComplianceUtility {
 
         Note:
         - You must log in with the corresponding Microsoft 365 user account for which you want to check the license details.
-        - The Microsoft Graph PowerShell modules are required to proceed this option. If you do not have this module installed, 'Compliance Utility' will try to install it from PowerShell Gallery.
+        - The Microsoft Graph PowerShell modules are required. Run ComplianceUtility -UpdateModules to install missing or update outdated modules.
+
+    .PARAMETER CollectExchangeIRMConfiguration
+        This parameter collects your Exchange IRM configuration information by using the Exchange Online PowerShell module.
+
+        The results are written to the log file ExchangeIRMConfiguration.log in the subfolder "Collect" of the Logs folder.
+
+        Note:
+        - You must run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges to continue with this option. Please contact your administrator if necessary.
+        - You need to know your Exchange online administrator account information to proceed, as you will be asked for your credentials.
+        - The Microsoft Exchange Online Management module is required. Run ComplianceUtility -UpdateModules to install missing or update outdated modules.
 
     .PARAMETER CompressLogs
         This command line parameter should always be used at the very end of a scenario.
 
-        This parameter compresses all collected log files and folders into a .zip archive, and the corresponding file is saved to your desktop. In addition, the default logs folder (on Windows: '%temp%\ComplianceUtility', on macOS: '~/Documents/ComplianceUtility') is cleaned.
+        This parameter compresses all collected log files and folders into a .zip archive, and the corresponding file is saved to your desktop. In addition, the default logs folder ('%temp%\ComplianceUtility') is cleaned.
+
+    .PARAMETER UpdateModules
+        Checks the required PowerShell modules (AIPService, ExchangeOnlineManagement, and Microsoft Graph).
+        It installs missing modules and updates outdated ones from the PowerShell Gallery.
 
     .PARAMETER Menu
-        This will start the 'Compliance Utility' with the default menu.
-
-    .PARAMETER SkipUpdates
-        IMPORTANT: Use this parameter only if you are sure that all PowerShell modules are up to date.
-
-        This parameter skips the update check mechanism for all entries of the COLLECT menu.
+        This will start the Compliance Utility with the default menu.
 
     .EXAMPLE
         ComplianceUtility -Information
@@ -497,7 +374,15 @@ Function ComplianceUtility {
     .EXAMPLE
         ComplianceUtility -CollectUserLicenseDetails
         This parameter collects the user license details by Microsoft Graph.
-        
+
+    .EXAMPLE
+        ComplianceUtility -CollectExchangeIRMConfiguration
+        This parameter collects your Exchange IRM configuration information.
+
+    .EXAMPLE
+        ComplianceUtility -UpdateModules
+        This installs missing and updates outdated PowerShell modules required by the Compliance Utility.
+
     .EXAMPLE
         ComplianceUtility -CompressLogs
         This parameter compress all collected logs files into a .zip archive, and the corresponding path and file name is displayed.
@@ -508,24 +393,24 @@ Function ComplianceUtility {
 
     .EXAMPLE
         ComplianceUtility -Menu
-        This will start the 'Compliance Utility' with the default menu.
+        This will start the Compliance Utility with the default menu.
 
     .LINK
-        https://aka.ms/ComplianceUtility
+        https://compliance-utility.com
 
     #>
 
     <# Binding for parameters #>
     [CmdletBinding (
-        HelpURI = "https://github.com/microsoft/ComplianceUtility/blob/main/Manuals/3.2.2/Manual-Win.md", <# URL for online manual #>
+        HelpURI = "https://github.com/schiroky/ComplianceUtility/blob/main/Manuals/4.0.0/Manual.md", <# URL for online manual #>
         PositionalBinding = $false, <# None-positional parameters #>
         DefaultParameterSetName = "Menu" <# Default start parameter #>
     )]
-    [Alias("CompUtil","UnifiedLabelingSupportTool")]
+    [Alias("CompUtil")]
 
     <# Parameter definitions #>
     Param (
-        
+
         <# Information #>
         [Alias("i")]
         [Parameter(ParameterSetName = "Information")]
@@ -575,22 +460,27 @@ Function ComplianceUtility {
         <# CollectDLPPoliciesAndRules #>
         [Alias("d")]
         [Parameter(ParameterSetName = "Reset and logging")]
-        [switch]$CollectDLPRulesAndPolicies,        
+        [switch]$CollectDLPRulesAndPolicies,
 
         <# CollectUserLicenseDetails #>
         [Alias("u")]
         [Parameter(ParameterSetName = "Reset and logging")]
-        [switch]$CollectUserLicenseDetails,       
+        [switch]$CollectUserLicenseDetails,
 
-        <# SkipUPdates #>
-        [Parameter(ParameterSetName = "Menu")]
+        <# CollectExchangeIRMConfiguration #>
+        [Alias("g")]
         [Parameter(ParameterSetName = "Reset and logging")]
-        [switch]$SkipUpdates,
+        [switch]$CollectExchangeIRMConfiguration,
 
         <# CompressLogs #>
         [Alias("z")]
         [Parameter(ParameterSetName = "Reset and logging")]
         [switch]$CompressLogs,
+
+        <# UpdateModules #>
+        [Alias("q")]
+        [Parameter(ParameterSetName = "Update modules")]
+        [switch]$UpdateModules,
 
         <# Menu #>
         [Parameter(ParameterSetName = "Menu")]
@@ -607,19 +497,19 @@ Function ComplianceUtility {
         <# Logging #>
         fncLogging -strLogFunction "ComplianceUtility" -strLogDescription "INFORMATION" -strLogValue "Proceeded"
 
-    } 
+    }
 
     <# Actions for License #>
     If ($PSBoundParameters.ContainsKey("License")) {
 
         <# Call License #>
         fncLicense
-    
+
         <# Logging #>
         fncLogging -strLogFunction "ComplianceUtility" -strLogDescription "LICENSE" -strLogValue "Proceeded"
 
     }
-    
+
     <# Actions for Help #>
     If ($PSBoundParameters.ContainsKey("Help")) {
 
@@ -635,7 +525,7 @@ Function ComplianceUtility {
     If ($PSBoundParameters.ContainsKey("Reset")) {
 
         <# Logging #>
-        fncLogging -strLogFunction "ComplianceUtility" -strLogDescription "Parameter Help" -strLogValue "Triggered"                
+        fncLogging -strLogFunction "ComplianceUtility" -strLogDescription "Parameter Help" -strLogValue "Triggered"
 
         <# Call Reset #>
         fncReset -strResetMethod $Reset
@@ -646,27 +536,10 @@ Function ComplianceUtility {
     If ($PSBoundParameters.ContainsKey("RecordProblem")) {
 
         <# Logging #>
-        fncLogging -strLogFunction "ComplianceUtility" -strLogDescription "Parameter RecordProblem" -strLogValue "Triggered"       
+        fncLogging -strLogFunction "ComplianceUtility" -strLogDescription "Parameter RecordProblem" -strLogValue "Triggered"
 
         <# Call RecordProblem #>
         fncRecordProblem
-
-    }
-
-    <# Variable for unavailable COLLECT features on macOS #>
-    $Private:strNotAvailableOnMac = "This feature is not available on Apple macOS."
-
-    <# Actions for SkipUpdates #>
-    If ($PSBoundParameters.ContainsKey("SkipUpdates")) {
-
-        <# Logging #>
-        fncLogging -strLogFunction "ComplianceUtility" -strLogDescription "Parameter SkipUpdates" -strLogValue "Triggered"
-          
-        <# Define variable #>
-        $Global:bolSkipRequiredUpdates | Out-Null
-
-        <# Disabling updates check #>
-        $Global:bolSkipRequiredUpdates = $true
 
     }
 
@@ -676,19 +549,8 @@ Function ComplianceUtility {
         <# Logging #>
         fncLogging -strLogFunction "ComplianceUtility" -strLogDescription "Parameter CollectAIPServiceConfiguration" -strLogValue "Triggered"
 
-        <# Consider Windows #>
-        If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
-
-            <# Call CollectAIPServiceConfiguration #>
-            fncCollectAIPServiceConfiguration
-
-        }
-        Else {
-
-            <# Message on macOS #>
-            Write-Output $Private:strNotAvailableOnMac
-
-        }
+        <# Call CollectAIPServiceConfiguration #>
+        fncCollectAIPServiceConfiguration
 
     }
 
@@ -698,19 +560,8 @@ Function ComplianceUtility {
         <# Logging #>
         fncLogging -strLogFunction "ComplianceUtility" -strLogDescription "Parameter CollectProtectionTemplates" -strLogValue "Triggered"
 
-        <# Consider Windows #>
-        If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
-
-            <# Call CollectProtectionTemplates #>
-            fncCollectProtectionTemplates
-
-        }
-        Else {
-
-            <# Message on macOS #>
-            Write-Output $Private:strNotAvailableOnMac
-
-        }
+        <# Call CollectProtectionTemplates #>
+        fncCollectProtectionTemplates
 
     }
 
@@ -742,23 +593,12 @@ Function ComplianceUtility {
         <# Logging #>
         fncLogging -strLogFunction "ComplianceUtility" -strLogDescription "Parameter CollectEndpointsURLs" -strLogValue "Triggered"
 
-        <# Consider Windows #>
-        If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
-
-            <# Call CollectEndpointURLs #>
-            fncCollectEndpointURLs
-
-        }
-        Else {
-
-            <# Message on macOS #>
-            Write-Output $Private:strNotAvailableOnMac
-
-        }
+        <# Call CollectEndpointURLs #>
+        fncCollectEndpointURLs
 
     }
 
-    <# Actions for  CollectDLPRulesAndPolicies #>
+    <# Actions for CollectDLPRulesAndPolicies #>
     If ($PSBoundParameters.ContainsKey("CollectDLPRulesAndPolicies")) {
 
         <# Logging #>
@@ -766,6 +606,17 @@ Function ComplianceUtility {
 
         <# Call CollectDLPRulesAndPolicies #>
         fncCollectDLPRulesAndPolicies
+
+    }
+
+    <# Actions for CollectExchangeIRMConfiguration #>
+    If ($PSBoundParameters.ContainsKey("CollectExchangeIRMConfiguration")) {
+
+        <# Logging #>
+        fncLogging -strLogFunction "ComplianceUtility" -strLogDescription "Parameter CollectExchangeIRMConfiguration" -strLogValue "Triggered"
+
+        <# Call CollectExchangeIRMConfiguration #>
+        fncCollectExchangeIRMConfiguration
 
     }
 
@@ -782,7 +633,24 @@ Function ComplianceUtility {
         $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
 
         <# Exit #>
-        Break
+        Return
+
+    }
+
+    <# Actions for update moduls #>
+    If ($PSBoundParameters.ContainsKey("UpdateModules")) {
+
+        <# Logging #>
+        fncLogging -strLogFunction "ComplianceUtility" -strLogDescription "Parameter UpdateModules" -strLogValue "Triggered"
+
+        <# Call UpdateModules #>
+        fncUpdateModules
+
+        <# Set back window title to default #>
+        $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
+
+        <# Exit #>
+        Return
 
     }
 
@@ -812,7 +680,7 @@ Function fncLogging ($strLogFunction, $strLogDescription, $strLogValue) {
     Write-Verbose "$(Get-Date -UFormat "%Y-%m-%d"), $(Get-Date -UFormat "%H:%M"), $strLogFunction, $strLogDescription, $strLogValue"
 
     <# Append output #>
-    Write-Verbose "$(Get-Date -UFormat "%Y-%m-%d"), $(Get-Date -UFormat "%H:%M"), $strLogFunction, $strLogDescription, $strLogValue" -ErrorAction SilentlyContinue -Verbose 4>> "$Global:strUserLogPath\Script.log" 
+    Write-Verbose "$(Get-Date -UFormat "%Y-%m-%d"), $(Get-Date -UFormat "%H:%M"), $strLogFunction, $strLogDescription, $strLogValue" -ErrorAction SilentlyContinue -Verbose 4>> "$Global:strUserLogPath\Script.log"
 
 }
 
@@ -822,7 +690,7 @@ Function fncInformation {
     fncLogging -strLogFunction "fncInformation" -strLogDescription "INFORMATION" -strLogValue "Called"
 
     <# Command line actions #>
-    If ($Global:bolCommingFromMenu -eq $false) {
+    If ($Global:bolComingFromMenu -eq $false) {
 
         <# Call Information #>
         Get-Help -Verbose:$false ComplianceUtility
@@ -830,10 +698,10 @@ Function fncInformation {
     }
 
     <# Menu Actions #>
-    If ($Global:bolCommingFromMenu -eq $true) {
-    
+    If ($Global:bolComingFromMenu -eq $true) {
+
         <# Output #>
-        Write-Output "NAME:`nComplianceUtility`n`nDESCRIPTION:`nThe 'Compliance Utility' is a powerful tool that helps troubleshoot and diagnose sensitivity labels, policies, settings and more. Whether you need to fix issues or reset configurations, this tool has you covered.`n`nVERSION:`n$Global:strVersion`n`nAUTHOR:`nClaus Schiroky`nModern Solutions & Support - EMEA Modern Work Team`nMicrosoft Deutschland GmbH`n`nHOMEPAGE:`nhttps://aka.ms/ComplianceUtility`n`nPRIVACY STATEMENT:`nhttps://privacy.microsoft.com/PrivacyStatement`n`nCOPYRIGHT:`nCopyright (c) Microsoft Corporation.`n"
+        Write-Output "NAME:`nComplianceUtility`n`nDESCRIPTION:`nThe Compliance Utility is a powerful tool that helps troubleshoot and diagnose sensitivity labels, policies, settings and more. Whether you need to fix issues or reset configurations, this tool gives you everything you need.`n`nVERSION:`n$Global:strVersion`n`nAUTHOR:`nClaus Schiroky`n`nHOMEPAGE:`nhttps://compliance-utility.com`n`nCOPYRIGHT:`nCopyright (c) Claus Schiroky.`n"
 
     }
 
@@ -845,7 +713,7 @@ Function fncLicense {
     fncLogging -strLogFunction "fncLicense" -strLogDescription "LICENSE" -strLogValue "Called"
 
     <# Output #>
-    Write-Output "MIT License`n`nCopyright (c) Microsoft Corporation.`n`nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the `"Software`"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:`n`nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.`n`nTHE SOFTWARE IS PROVIDED `"AS IS`", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.`n"
+    Write-Output "MIT License`n`nCopyright (c) Claus Schiroky.`n`nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the `"Software`"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:`n`nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.`n`nTHE SOFTWARE IS PROVIDED `"AS IS`", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.`n"
 
 }
 
@@ -853,61 +721,31 @@ Function fncHelp {
 
     <# No internet message #>
     $Private:strNoOnlineHelp = "ATTENTION: The online manual cannot be accessed.`nEither the website (github.com) is unavailable or there is no internet connection.`n`nNote:`n`n- Please use the command line help by entering the command:`nGet-Help ComplianceUtility -Detailed"
-    
-    <# Open manual on Windows #>
-    If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
 
-        <# Check internet connection #>
-        If ($(fncTestInternetAccess "github.com") -Eq $true) {
+    <# Check internet connection #>
+    If ($(fncTestInternetAccess "github.com") -Eq $true) {
 
-            <# Open manual #>
-            Start-Process "https://github.com/microsoft/ComplianceUtility/blob/main/Manuals/3.2.2/Manual-Win.md"
+        <# Open manual #>
+        Start-Process "https://github.com/schiroky/ComplianceUtility/blob/main/Manuals/4.0.0/Manual.md"
 
-            <# Logging #>
-            fncLogging -strLogFunction "fncHelp" -strLogDescription "HELP" -strLogValue "Called"
-
-        }
-        Else { <# Offline actions #>
-
-            <# Output #>
-            Write-ColoredOutput Red $Private:strNoOnlineHelp
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncHelp" -strLogDescription "Help" -strLogValue "No internet connection"
-
-        }
+        <# Logging #>
+        fncLogging -strLogFunction "fncHelp" -strLogDescription "HELP" -strLogValue "Called"
 
     }
+    Else { <# Offline actions #>
 
-    <# Open mnanual on macOS #>
-    If ($IsMacOS -eq $true) {
+        <# Output #>
+        Write-ColoredOutput Red $Private:strNoOnlineHelp
 
-        <# Check internet connection #>
-        If ($(fncTestInternetAccess "github.com") -Eq $true) {
-
-            <# Open manual #>
-            Open "https://github.com/microsoft/ComplianceUtility/blob/main/Manuals/3.2.2/Manual-Mac.md"
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncHelp" -strLogDescription "HELP" -strLogValue "Called"
-
-        }
-        Else { <# Offline action #>
-
-            <# Output #>
-            Write-ColoredOutput Red $Private:strNoOnlineHelp
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncHelp" -strLogDescription "Help" -strLogValue "No internet connection"
-
-        }
+        <# Logging #>
+        fncLogging -strLogFunction "fncHelp" -strLogDescription "Help" -strLogValue "No internet connection"
 
     }
 
 }
 
 Function Write-ColoredOutput($Private:ForegroundColor) {
-    
+
     <# Variables #>
     $Private:TextColor = $Global:host.UI.RawUI.ForegroundColor <# Backup current text color #>
     $Global:host.UI.RawUI.ForegroundColor = $Private:ForegroundColor <# Set text color #>
@@ -930,26 +768,29 @@ Function fncDeleteRegistrySetting ($strRegistryKey, $strRegistrySetting) {
 
     <# Try to remove registry setting #>
     Try {
-            
+
         <# Set registry setting variable #>
         $strItemExists = Get-ItemProperty $strRegistryKey $strRegistrySetting -ErrorAction SilentlyContinue
-    
+
         <# Remove registry setting only if it exists #>
         If (-not ($Null -eq $strItemExists) -or ($strItemExists.Length -eq 0)) {
-                
+
             <# Remove registry setting #>
             Remove-ItemProperty -Path $strRegistryKey -Name $strRegistrySetting -Force -ErrorAction Stop
-                
+
             <# Logging #>
             fncLogging -strLogFunction "fncDeleteRegistrySetting" -strLogDescription "$strRegistrySetting ($strRegistryKey)" -strLogValue "Removed"
 
         }
 
     }
-    Catch {  
+    Catch {
+
         <# Silently ignore if setting does not exist #>
+        Write-Verbose "Registry setting not found or cannot be removed: $strRegistrySetting"
+
     }
-  
+
 }
 
 Function fncReset ($strResetMethod) {
@@ -969,24 +810,24 @@ Function fncReset ($strResetMethod) {
             fncLogging -strLogFunction "fncReset" -strLogDescription "RESET Default" -strLogValue "Canceled"
 
             <# Command line actions #>
-            If ($Global:bolCommingFromMenu -eq $false) {
+            If ($Global:bolComingFromMenu -eq $false) {
 
                 <# Set back window title #>
                 $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
 
                 <# Exit #>
-                Break
+                Return
 
             }
 
             <# ShowMenu actions #>
-            If ($Global:bolCommingFromMenu -eq $true) {
+            If ($Global:bolComingFromMenu -eq $true) {
 
                 <# Clear console #>
                 Clear-Host
 
                 <# Call ShowMenu #>
-                fncShowMenu    
+                fncShowMenu
 
             }
 
@@ -1011,140 +852,106 @@ Function fncReset ($strResetMethod) {
     <# "Yes"/Silent actions (by reset default) #>
     If ($Private:ReadHost -eq "Y" -or ($strResetMethod -match "Silent")) {
 
-        <# Detect Windows #>
-        If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
+        <# Clean user keys #>
+        fncDeleteItem "HKCU:\SOFTWARE\Classes\Local Settings\Software\Microsoft\MSIPC"
+        fncDeleteItem "HKCU:\SOFTWARE\Classes\Local Settings\Software\Microsoft\AIPMigration"
+        fncDeleteItem "HKCU:\SOFTWARE\Classes\Microsoft.IPViewerChildMenu"
+        fncDeleteItem "HKCU:\SOFTWARE\Microsoft\Cloud\Office"
+        fncDeleteItem "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\DRM"
+        fncDeleteItem "HKCU:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\DRM"
+        fncDeleteItem "HKCU:\SOFTWARE\Wow6432Node\Microsoft\Office\16.0\Common\DRM"
+        fncDeleteItem "HKCU:\SOFTWARE\Microsoft\XPSViewer\Common\DRM"
+        fncDeleteItem "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Identity"
+        fncDeleteItem "HKCU:\SOFTWARE\Microsoft\MSIP"
+        fncDeleteItem "HKCU:\SOFTWARE\Microsoft\MSOIdentityCRL"
 
-            <# Clean user keys #>
-            fncDeleteItem "HKCU:\SOFTWARE\Classes\Local Settings\Software\Microsoft\MSIPC"
-            fncDeleteItem "HKCU:\SOFTWARE\Classes\Local Settings\Software\Microsoft\AIPMigration"
-            fncDeleteItem "HKCU:\SOFTWARE\Classes\Microsoft.IPViewerChildMenu"
-            fncDeleteItem "HKCU:\SOFTWARE\Microsoft\Cloud\Office"
-            fncDeleteItem "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\DRM"
-            fncDeleteItem "HKCU:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\DRM"
-            fncDeleteItem "HKCU:\SOFTWARE\Wow6432Node\Microsoft\Office\16.0\Common\DRM"
-            fncDeleteItem "HKCU:\SOFTWARE\Microsoft\XPSViewer\Common\DRM"
-            fncDeleteItem "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Identity"
-            fncDeleteItem "HKCU:\SOFTWARE\Microsoft\MSIP"
-            fncDeleteItem "HKCU:\SOFTWARE\Microsoft\MSOIdentityCRL"
+        <# Clean registry settings #>
+        fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Cloud\Office\16.0\Common\Security\Labels" -strRegistrySetting "UseOfficeForLabelling"
+        fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\Security\Labels" -strRegistrySetting "UseOfficeForLabelling"
+        fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Security\Labels" -strRegistrySetting "UseOfficeForLabelling"
+        fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Cloud\Office\16.0\Common\Security\Labels" -strRegistrySetting "AIPException"
+        fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\Security\Labels" -strRegistrySetting "AIPException"
+        fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Security\Labels" -strRegistrySetting "AIPException"
+        fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Cloud\Office\16.0\Common\Security" -strRegistrySetting "OpenXMLEncryptProperty"
+        fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\Security" -strRegistrySetting "OpenXMLEncryptProperty"
+        fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Security" -strRegistrySetting "OpenXMLEncryptProperty"
+        fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Cloud\Office\16.0\Common\Security" -strRegistrySetting "DRMEncryptProperty"
+        fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\Security" -strRegistrySetting "DRMEncryptProperty"
+        fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Security" -strRegistrySetting "DRMEncryptProperty"
 
-            <# Clean registry settings #>
-            fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Cloud\Office\16.0\Common\Security\Labels" -strRegistrySetting "UseOfficeForLabelling"
-            fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\Security\Labels" -strRegistrySetting "UseOfficeForLabelling"
-            fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Security\Labels" -strRegistrySetting "UseOfficeForLabelling"
-            fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Cloud\Office\16.0\Common\Security\Labels" -strRegistrySetting "AIPException"
-            fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\Security\Labels" -strRegistrySetting "AIPException"
-            fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Security\Labels" -strRegistrySetting "AIPException"
-            fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Cloud\Office\16.0\Common\Security" -strRegistrySetting "OpenXMLEncryptProperty"
-            fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\Security" -strRegistrySetting "OpenXMLEncryptProperty"
-            fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Security" -strRegistrySetting "OpenXMLEncryptProperty"
-            fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Cloud\Office\16.0\Common\Security" -strRegistrySetting "DRMEncryptProperty"
-            fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\Security" -strRegistrySetting "DRMEncryptProperty"
-            fncDeleteRegistrySetting -strRegistryKey "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Security" -strRegistrySetting "DRMEncryptProperty"
- 
-            <# Clean client classes keys #>
-            fncDeleteItem "HKCR:\AllFilesystemObjects\shell\Microsoft.Azip.Inspect"
-            fncDeleteItem "HKCR:\AllFilesystemObjects\shell\Microsoft.Azip.RightClick"
+        <# Clean client classes keys #>
+        fncDeleteItem "HKCR:\AllFilesystemObjects\shell\Microsoft.Azip.Inspect"
+        fncDeleteItem "HKCR:\AllFilesystemObjects\shell\Microsoft.Azip.RightClick"
 
-            <# Clean client folders #>
-            fncDeleteItem "$env:LOCALAPPDATA\Microsoft\Word\MIPSDK\mip"
-            fncDeleteItem "$env:LOCALAPPDATA\Microsoft\Excel\MIPSDK\mip"
-            fncDeleteItem "$env:LOCALAPPDATA\Microsoft\PowerPoint\MIPSDK\mip"
-            fncDeleteItem "$env:LOCALAPPDATA\Microsoft\Outlook\MIPSDK\mip"
-            fncDeleteItem "$env:LOCALAPPDATA\Microsoft\Outlook\MIPSDKPDF\mip"
-            fncDeleteItem "$env:LOCALAPPDATA\Microsoft\OneNote\MIPSDK\mip"
-            fncDeleteItem "$env:LOCALAPPDATA\Microsoft\Office\MIPSDK\mip"
-            fncDeleteItem "$env:LOCALAPPDATA\Microsoft\Office\DLP"
-            fncDeleteItem "$env:LOCALAPPDATA\Microsoft\Office\CLP"
-            fncDeleteItem "$env:TEMP\Diagnostics"
-            fncDeleteItem "$env:LOCALAPPDATA\Microsoft\MSIP"
-            fncDeleteItem "$env:LOCALAPPDATA\Microsoft\MSIPC"
-            fncDeleteItem "$env:LOCALAPPDATA\Microsoft\DRM"
+        <# Clean client folders #>
+        fncDeleteItem "$env:LOCALAPPDATA\Microsoft\Word\MIPSDK\mip"
+        fncDeleteItem "$env:LOCALAPPDATA\Microsoft\Excel\MIPSDK\mip"
+        fncDeleteItem "$env:LOCALAPPDATA\Microsoft\PowerPoint\MIPSDK\mip"
+        fncDeleteItem "$env:LOCALAPPDATA\Microsoft\Outlook\MIPSDK\mip"
+        fncDeleteItem "$env:LOCALAPPDATA\Microsoft\Outlook\MIPSDKPDF\mip"
+        fncDeleteItem "$env:LOCALAPPDATA\Microsoft\OneNote\MIPSDK\mip"
+        fncDeleteItem "$env:LOCALAPPDATA\Microsoft\Office\MIPSDK\mip"
+        fncDeleteItem "$env:LOCALAPPDATA\Microsoft\Office\DLP"
+        fncDeleteItem "$env:LOCALAPPDATA\Microsoft\Office\CLP"
+        fncDeleteItem "$env:TEMP\Diagnostics"
+        fncDeleteItem "$env:LOCALAPPDATA\Microsoft\MSIP"
+        fncDeleteItem "$env:LOCALAPPDATA\Microsoft\MSIPC"
+        fncDeleteItem "$env:LOCALAPPDATA\Microsoft\DRM"
 
-            <# Administrative reset actions #>
-            If ($Global:bolRunningPrivileged -eq $true) {
+        <# Administrative reset actions #>
+        If ($Global:bolRunningPrivileged -eq $true) {
 
-                # Clean machine keys #>
-                fncDeleteItem "HKLM:\SOFTWARE\Wow6432Node\Microsoft\MSIPC"
-                fncDeleteItem "HKLM:\SOFTWARE\Microsoft\MSIPC"
-                fncDeleteItem "HKLM:\SOFTWARE\Microsoft\MSDRM"
-                fncDeleteItem "HKLM:\SOFTWARE\Wow6432Node\Microsoft\MSDRM"
-                fncDeleteItem "HKLM:\SOFTWARE\WOW6432Node\Microsoft\MSIP"
+            # Clean machine keys #>
+            fncDeleteItem "HKLM:\SOFTWARE\Wow6432Node\Microsoft\MSIPC"
+            fncDeleteItem "HKLM:\SOFTWARE\Microsoft\MSIPC"
+            fncDeleteItem "HKLM:\SOFTWARE\Microsoft\MSDRM"
+            fncDeleteItem "HKLM:\SOFTWARE\Wow6432Node\Microsoft\MSDRM"
+            fncDeleteItem "HKLM:\SOFTWARE\WOW6432Node\Microsoft\MSIP"
+            fncDeleteItem "HKLM:\SOFTWARE\Microsoft\PolicyManager\AdmxDefault" <# Intune MDM Policies #>
 
-            }
+        }
 
-            <# Actions on PowerShell Core for compatibility mode #>
-            If ($PSVersionTable.PSEdition.ToString() -eq "Core") {
+        <# Actions on PowerShell Core for compatibility mode #>
+        If ($PSVersionTable.PSEdition.ToString() -eq "Core") {
 
-                # Remove if an existing installation was found #>
-                If (Get-Module -Name AzureInformationProtection -ListAvailable -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) {
+            # Remove if an existing installation was found #>
+            If (Get-Module -Name AzureInformationProtection -ListAvailable -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) {
 
-                    <# Remove AzureInformationProtection module #>
-                    Remove-Module -Name AzureInformationProtection -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
+                <# Remove AzureInformationProtection module #>
+                Remove-Module -Name AzureInformationProtection -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
 
-                    <# Import module in compatiblity mode #>
-                    Import-Module -Name AzureInformationProtection -UseWindowsPowerShell -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
-
-                    <# Logging #>
-                    fncLogging -strLogFunction "fncReset" -strLogDescription "AzureInformationProtection compatiblity mode" -strLogValue $true
-
-                }
-
-                # Remove if an existing installation was found #>
-                If (Get-Module -Name PurviewInformationProtection -ListAvailable -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) {
-
-                    <# Remove UnifiedLabelingSupportTool module #>
-                    Remove-Module -Name PurviewInformationProtection -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
-
-                    <# Import module in compatiblity mode #>
-                    Import-Module -Name PurviewInformationProtection -UseWindowsPowerShell -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
-
-                    <# Logging #>
-                    fncLogging -strLogFunction "fncReset" -strLogDescription "PurviewInformationProtection compatiblity mode" -strLogValue $true
-
-                }
-
-            }
-
-            <# Clear user settings #>
-            If (Get-Module -ListAvailable -Name AzureInformationProtection, PurviewInformationProtection) { <# Check for AIP/PIP client #>
-        
-                <# Clear user settings #>
-                Clear-AIPAuthentication -ErrorAction SilentlyContinue | Out-Null
+                <# Import module in compatiblity mode #>
+                Import-Module -Name AzureInformationProtection -UseWindowsPowerShell -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
 
                 <# Logging #>
-                fncLogging -strLogFunction "fncReset" -strLogDescription "AIPAuthentication" -strLogValue "Cleared"
+                fncLogging -strLogFunction "fncReset" -strLogDescription "AzureInformationProtection compatiblity mode" -strLogValue $true
+
+            }
+
+            # Remove if an existing installation was found #>
+            If (Get-Module -Name PurviewInformationProtection -ListAvailable -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) {
+
+                <# Remove UnifiedLabelingSupportTool module #>
+                Remove-Module -Name PurviewInformationProtection -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
+
+                <# Import module in compatiblity mode #>
+                Import-Module -Name PurviewInformationProtection -UseWindowsPowerShell -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
+
+                <# Logging #>
+                fncLogging -strLogFunction "fncReset" -strLogDescription "PurviewInformationProtection compatiblity mode" -strLogValue $true
 
             }
 
         }
 
-        <# Reset for macOS #>
-        If ($IsMacOS -eq $true) {
+        <# Clear user settings #>
+        If (Get-Module -ListAvailable -Name AzureInformationProtection, PurviewInformationProtection) { <# Check for AIP/PIP client #>
 
-            <# Clean Office CLP/MIPSDK folders #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.Word/Data/Library/Application Support/Microsoft/Office/CLP" <# Word #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.Excel/Data/Library/Application Support/Microsoft/Office/CLP" <# Excel #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.PowerPoint/Data/Library/Application Support/Microsoft/Office/CLP" <# PowerPoint #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.Outlook/Data/Library/Application Support/Microsoft/Office/CLP" <# Outlook #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.OneNote/Data/Library/Application Support/Microsoft/Office/CLP" <# OneNote #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.Word/Data/Library/Application Support/Microsoft/MIPSDK/mip" <# Word #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.Excel/Data/Library/Application Support/Microsoft/MIPSDK/mip" <# Excel #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.PowerPoint/Data/Library/Application Support/Microsoft/MIPSDK/mip" <# PowerPoint #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.Outlook/Data/Library/Application Support/Microsoft/MIPSDK/mip" <# Outlook #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.OneNote/Data/Library/Application Support/Microsoft/MIPSDK/mip" <# OneNote #>
+            <# Clear user settings #>
+            Clear-AIPAuthentication -ErrorAction SilentlyContinue | Out-Null
 
-            <# Clean Office log folders #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.Word/Data/Library/Logs" <# Word #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.Excel/Data/Library/Logs" <# Excel #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.PowerPoint/Data/Library/Logs" <# PowerPoint #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.Outlook/Data/Library/Logs" <# Outlook #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.OneNote/Data/Library/Logs" <# OneNote #>
-
-            <# Clean RMS Sharing App log folders #>
-            fncDeleteItem "$(printenv HOME)/Library/Containers/com.microsoft.protection.rms-sharing-mac/Data/Library/Logs"
-
-            <# Clean Office MIP #>
-            fncDeleteItem "$(printenv HOME)/Library/Group Containers/UBF8T346G9.Office/mip_policy/mip/logs" <# MIP #>
+            <# Logging #>
+            fncLogging -strLogFunction "fncReset" -strLogDescription "AIPAuthentication" -strLogValue "Cleared"
 
         }
 
@@ -1174,25 +981,27 @@ Function fncReset ($strResetMethod) {
         fncLogging -strLogFunction "fncReset" -strLogDescription "RESET" -strLogValue "Canceled"
 
         <# Command line actions #>
-        If ($Global:bolCommingFromMenu -eq $false) {
+        If ($Global:bolComingFromMenu -eq $false) {
 
             <# Set back window title #>
             $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
 
             <# Exit #>
-            Break
+            Return
 
         }
 
         <# Menu actions #>
-        If ($Global:bolCommingFromMenu -eq $true) {
- 
+        If ($Global:bolComingFromMenu -eq $true) {
+
             <# Clear console #>
             Clear-Host
- 
+
             <# Call ShowMenu #>
-            fncShowMenu    
- 
+            fncShowMenu
+
+            Return
+
         }
 
     }
@@ -1206,22 +1015,9 @@ Function fncDeleteItem ($Private:objItem) {
 
         <# Try to delete item/folder #>
         Try {
-            
-            <# Detect Windows #>
-            If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
 
-                <# Delete folder/registry key #>
-                Get-ChildItem -Path $Private:objItem -Exclude "Telemetry", "powershell.exe", "powershell" -Force | Remove-Item -Recurse -Force -ErrorAction Stop | Out-Null
-
-            }
-            
-            <# Detect macOS #>
-            If ($IsMacOS -eq $true) {
-
-                <# Delete folder/file #>
-                Remove-item -Path $Private:objItem -Recurse -Force -ErrorAction Stop | Out-Null
-
-            }
+            <# Delete folder/registry key #>
+            Get-ChildItem -Path $Private:objItem -Exclude "Telemetry", "powershell.exe", "powershell" -Force | Remove-Item -Recurse -Force -ErrorAction Stop | Out-Null
 
             <# Logging #>
             fncLogging -strLogFunction "fncDeleteItem" -strLogDescription "Item deleted" -strLogValue $Private:objItem
@@ -1240,7 +1036,7 @@ Function fncDeleteItem ($Private:objItem) {
             $Private:objItem = $null
 
             <# ShowMenu actions #>
-            If ($Global:bolCommingFromMenu -eq $false) {
+            If ($Global:bolComingFromMenu -eq $false) {
 
                 <# Output #>
                 Write-ColoredOutput Red "RESET: Failed.`n"
@@ -1249,11 +1045,11 @@ Function fncDeleteItem ($Private:objItem) {
                 $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
 
                 <# Exit #>
-                Break
+                Return
 
             }
             <# ShowMenu actions #>
-            If ($Global:bolCommingFromMenu -eq $true) {
+            If ($Global:bolComingFromMenu -eq $true) {
 
                 <# Output #>
                 Write-ColoredOutput Red "RESET: Failed.`n"
@@ -1285,7 +1081,7 @@ Function fncCopyItem ($Private:objItem, $Private:strDestination, $Private:strFil
 
             <# Copy item #>
             Copy-Item -Path $Private:objItem -Destination $Private:strDestination -Recurse -Force -ErrorAction Stop | Out-Null
-            
+
             <# Logging #>
             fncLogging -strLogFunction "fncCopyItem" -strLogDescription "Item copied" -strLogValue $Private:strFileName
 
@@ -1325,18 +1121,18 @@ Function fncTestInternetAccess ($Private:strURL) {
     <# Test internet access #>
     If ($(Test-Connection $Private:strURL -Count 1 -Quiet) -Eq $true) {
 
-        <# Internet access #>
-        Return $true
-        
         <# Logging #>
         fncLogging -strLogFunction "fncTestInternetAccess" -strLogDescription "Internet access" -strLogValue $true
+
+        <# Internet access #>
+        Return $true
 
     }
     Else {
 
         <# No internet access #>
         Return $false
-       
+
         <# Logging #>
         fncLogging -strLogFunction "fncTestInternetAccess" -strLogDescription "Internet access" -strLogValue $false
 
@@ -1360,128 +1156,59 @@ Function fncRecordProblem {
     <# "Yes"-actions #>
     If ($Private:ReadHost -Eq "Y") {
 
-        <# Detect Windows #>
-        If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
+        <# Detect admin permissions #>
+        If ($Global:bolRunningPrivileged -eq $false) {
 
-            <# Detect admin permissions #>
-            If ($Global:bolRunningPrivileged -eq $false) {
-
-                <# Logging #>
-                Write-ColoredOutput Red "ATTENTION: Please note that neither CAPI2 or AIP event logs nor filter drivers are recorded.`nIf you want a complete record, you must run the 'Compliance Utility' in an administrative PowerShell window as a user with local administrative privileges."
-
-            }
-        
-            <# Output #>
-            Write-Output "Initializing, please wait..."
-
-            <# Variables for log folder #>    
-            $Private:strUniqueFolderName = (Get-Date -Verbose:$false -UFormat "%y%m%d-%H%M%S")
-            $Global:strUniqueLogFolder = $Global:strUserLogPath.ToString() + "\" +  $Private:strUniqueFolderName.ToString()
-
-            <# Create log folder #>
-            New-Item -ItemType Directory -Force -Path $Global:strUniqueLogFolder | Out-Null
-    
             <# Logging #>
-            fncLogging "fncRecordProblem" -strLogDescription "New log folder created" -strLogValue $Private:strUniqueFolderName
-
-            <# Call Enablelogging #>
-            fncEnableLogging
-
-            <# Output by privileges check #>
-            If ($Global:bolRunningPrivileged -eq $false) {
-
-                <# Output with no admin privileges #>
-                Write-Output "Recording is now underway for user `"$Env:UserName`"."
-
-            }
-            Else {
-
-                <# Output with admin privileges #>
-                Write-Output "Recording is now underway for administrator `"$Env:UserName`"."
-
-            }
-
-            <# Output #>
-            Write-ColoredOutput Red "IMPORTANT: Now reproduce the problem, but leave this window open."
-            Read-Host "After reproducing the problem, close all the applications you were using, return here and press enter to complete the recording."
-
-            <# Output #>
-            Write-Output "Collecting logs, please wait...`n"
-
-            <# Call CollectingLogs #>
-            fncCollectingLogs
-        
-            <# Call Disablelogging #>
-            fncDisableLogging
+            Write-ColoredOutput Red "ATTENTION: Please note that neither CAPI2 or AIP event logs nor filter drivers are recorded.`nIf you want a complete record, you must run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges."
 
         }
 
-        <# Detect macOS #>
-        If ($IsMacOS -eq $true) {
+        <# Output #>
+        Write-Output "Initializing, please wait..."
 
-            <# Output #>
-            Write-Output "Initializing, please wait..."
+        <# Variables for log folder #>
+        $Private:strUniqueFolderName = (Get-Date -Verbose:$false -UFormat "%y%m%d-%H%M%S")
+        $Global:strUniqueLogFolder = $Global:strUserLogPath.ToString() + "\" +  $Private:strUniqueFolderName.ToString()
 
-            <# Variables for log folder #>    
-            $Private:strUniqueFolderName = (Get-Date -Verbose:$false -UFormat "%y%m%d-%H%M%S")
-            $Global:strUniqueLogFolder = $Global:strUserLogPath.ToString() + "/" +  $Private:strUniqueFolderName.ToString()
-
-            <# Create log folder #>
-            New-Item -ItemType Directory -Force -Path $Global:strUniqueLogFolder | Out-Null
-    
-            <# Logging #>
-            fncLogging "fncRecordProblem" -strLogDescription "New log folder created" -strLogValue $Private:strUniqueFolderName
-
-            <# Enable Office ULS logging #>
-            Try {
-                
-                <# Set application preference to enable Office ULS logging #>
-                defaults write com.microsoft.office msoridEnableLogging -integer 1
-                defaults write com.microsoft.office msoridDefaultMinimumSeverity -integer 200
-
-                <# Logging #>
-                fncLogging -strLogFunction "fncRecordProblem" -strLogDescription "Office ULS logging" -strLogValue "Enabled"
-
-            }
-            Catch { 
-        
-                <# Logging #>
-                fncLogging -strLogFunction "fncRecordProblem" -strLogDescription "Office ULS logging" -strLogValue "Enable Failed"
-        
-            }
-
-            <# Output #>
-            Write-ColoredOutput Red "IMPORTANT: Now reproduce the problem, but leave this window open."
-            Read-Host "After reproducing the problem, close all the applications you were using, return here and press enter to complete the recording."
-
-            <# Output #>
-            Write-Output "Collecting logs, please wait...`n"
-
-            <# Call CollectLogging #>
-            fncCollectingLogs
-
-            <# Disable Office ULS logging #>
-            Try {
-                
-                <# Set application preference to disable Office ULS logging #>
-                defaults delete com.microsoft.office msoridEnableLogging
-                defaults delete com.microsoft.office msoridDefaultMinimumSeverity
-
-                <# Logging #>
-                fncLogging -strLogFunction "fncRecordProblem" -strLogDescription "Office ULS logging" -strLogValue "Disabled"
-
-            }
-            Catch { 
-        
-                <# Logging #>
-                fncLogging -strLogFunction "fncRecordProblem" -strLogDescription "Office ULS logging" -strLogValue "Disable Failed"
-        
-            }
-
-        }
+        <# Create log folder #>
+         New-Item -ItemType Directory -Force -Path $Global:strUniqueLogFolder | Out-Null
 
         <# Logging #>
-        fncLogging -strLogFunction "fncRecordProblem" -strLogDescription "RECORD PROBLEM" -strLogValue "Proceeded" 
+        fncLogging "fncRecordProblem" -strLogDescription "New log folder created" -strLogValue $Private:strUniqueFolderName
+
+        <# Call Enablelogging #>
+        fncEnableLogging
+
+        <# Output by privileges check #>
+        If ($Global:bolRunningPrivileged -eq $false) {
+
+            <# Output with no admin privileges #>
+            Write-Output "Recording is now underway for user `"$Env:UserName`"."
+
+        }
+        Else {
+
+            <# Output with admin privileges #>
+            Write-Output "Recording is now underway for administrator `"$Env:UserName`"."
+
+        }
+
+        <# Output #>
+        Write-ColoredOutput Red "IMPORTANT: Now reproduce the problem, but leave this window open."
+        Read-Host "After reproducing the problem, close all the applications you were using, return here and press enter to complete the recording."
+
+        <# Output #>
+        Write-Output "Collecting logs, please wait...`n"
+
+        <# Call CollectingLogs #>
+        fncCollectingLogs
+
+        <# Call Disablelogging #>
+        fncDisableLogging
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncRecordProblem" -strLogDescription "RECORD PROBLEM" -strLogValue "Proceeded"
 
         <# Output #>
         Write-Output "Log files: $Global:strUniqueLogFolder"
@@ -1497,24 +1224,26 @@ Function fncRecordProblem {
         fncLogging -strLogFunction "fncRecordProblem" -strLogDescription "RECORD PROBLEM" -strLogValue "Canceled"
 
         <# Command line actions #>
-        If ($Global:bolCommingFromMenu -eq $false) {
+        If ($Global:bolComingFromMenu -eq $false) {
 
             <# Set back window title #>
             $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
 
             <# Exit #>
-            Break
+            Return
 
         }
 
         <# ShowMenu actions #>
-        If ($Global:bolCommingFromMenu -eq $true) {
+        If ($Global:bolComingFromMenu -eq $true) {
 
             <# Clear console #>
             Clear-Host
 
             <# Call ShowMenu #>
-            fncShowMenu    
+            fncShowMenu
+
+            Return
 
         }
 
@@ -1525,25 +1254,27 @@ Function fncRecordProblem {
         fncLogging -strLogFunction "fncRecordProblem" -strLogDescription "RECORD PROBLEM" -strLogValue "Canceled"
 
         <# Command line actions #>
-        If ($Global:bolCommingFromMenu -eq $false) {
+        If ($Global:bolComingFromMenu -eq $false) {
 
             <# Set back window title #>
             $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
 
             <# Exit #>
-            Break
+            Return
 
         }
 
         <# ShowMenu actions #>
-        If ($Global:bolCommingFromMenu -eq $true) {
- 
+        If ($Global:bolComingFromMenu -eq $true) {
+
             <# Clear console #>
             Clear-Host
- 
+
             <# Call ShowMenu #>
-            fncShowMenu    
- 
+            fncShowMenu
+
+            Return
+
         }
 
     }
@@ -1559,19 +1290,19 @@ Function fncEnableLogging {
     fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "Enable logging" -strLogValue "Triggered"
 
     <# Implement registry key for function fncValidateForActivatedLogging to check whether logging was left enabled (for problem record) #>
-    If ($(Test-Path -Path "HKCU:\SOFTWARE\Microsoft\ComplianceUtility") -Eq $false) { <# Check, if path exist (to check for logging enabled), and create it if not #>
+    If ($(Test-Path -Path "HKCU:\SOFTWARE\Schiroky\ComplianceUtility") -Eq $false) { <# Check, if path exist (to check for logging enabled), and create it if not #>
 
         <# Create registry key #>
-        New-Item -Path "HKCU:\SOFTWARE\Microsoft\ComplianceUtility" -Force | Out-Null
+        New-Item -Path "HKCU:\SOFTWARE\Schiroky\ComplianceUtility" -Force | Out-Null
 
     }
 
     <# Implement registry key to check for enabled logging on next start, and rollback settings if necessary #>
-    New-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\ComplianceUtility" -Name "LoggingActivated" -Value $true -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
+    New-ItemProperty -Path "HKCU:\SOFTWARE\Schiroky\ComplianceUtility" -Name "LoggingActivated" -Value $true -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
 
     <# Progress bar #>
     Write-Progress -Activity " Enable logging, please wait..." -PercentComplete 0
-    
+
     <# Check for administrative privileges, and enabling corresponding logs #>
     If ($Global:bolRunningPrivileged -eq $true) {
 
@@ -1586,7 +1317,7 @@ Function fncEnableLogging {
 
         <# Clear CAPI2 event log #>
         wevtutil.exe clear-log Microsoft-Windows-CAPI2/Operational
-    
+
         <# Logging #>
         fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "CAPI2 event log" -strLogValue "Cleared"
 
@@ -1622,13 +1353,13 @@ Function fncEnableLogging {
     Write-Progress -Activity " Enable logging: Office TCOTrace..." -PercentComplete (100/7 * 3)
 
     <# <# Check for registry key "Debug" (2016) #>
-    If ($(Test-Path -Path "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Debug") -Eq $false) { 
+    If ($(Test-Path -Path "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Debug") -Eq $false) {
 
         <# Create registry key #>
         New-Item -Path "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Debug" -Force | Out-Null
 
     }
-    <# Enable Office TCOTrace logging for Office 2016 (16.0) #>
+    <# Enable Office TCOTrace logging #>
     New-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Debug" -Name "TCOTrace" -Value 1 -PropertyType DWord -Force | Out-Null
 
     <# Logging #>
@@ -1642,7 +1373,7 @@ Function fncEnableLogging {
 
         <# Clean MSIP/AIP v1/2 log folder content #>
         Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\MSIP\Logs" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-        
+
         <# Logging #>
         fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "MSIP log folder" -strLogValue "Cleared"
 
@@ -1653,7 +1384,7 @@ Function fncEnableLogging {
 
         <# Clean MSIPC log folder #>
         Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\MSIPC\Logs" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-        
+
         <# Logging #>
         fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "MSIPC log folder" -strLogValue "Cleared"
 
@@ -1664,7 +1395,7 @@ Function fncEnableLogging {
 
         <# Clean MIP SDK/AIP v2 log folder #>
         Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\MSIP\mip" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-        
+
         <# Logging #>
         fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "MIP log folder" -strLogValue "Cleared"
 
@@ -1675,7 +1406,7 @@ Function fncEnableLogging {
 
         <# Clean Office DLP/MIP log folder #>
         Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\Office\DLP" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-        
+
         <# Logging #>
         fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "Office DLP log folder" -strLogValue "Cleared"
 
@@ -1686,7 +1417,7 @@ Function fncEnableLogging {
 
         <# Clean Word MIPSDK log folder #>
         Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\Word\MIPSDK\mip" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-        
+
         <# Logging #>
         fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "Word MIPSDK log folder" -strLogValue "Cleared"
 
@@ -1697,10 +1428,10 @@ Function fncEnableLogging {
 
         <# Clean Excel MIPSDK log folder #>
         Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\Excel\MIPSDK\mip" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-            
+
         <# Logging #>
         fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "Excel MIPSDK log folder" -strLogValue "Cleared"
-    
+
     }
 
     <# Check for PowerPoint MIPSDK log folder #>
@@ -1708,10 +1439,10 @@ Function fncEnableLogging {
 
         <# Clean PowerPoint MIPSDK log folder #>
         Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\PowerPoint\MIPSDK\mip" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-            
+
         <# Logging #>
         fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "PowerPoint MIPSDK log folder" -strLogValue "Cleared"
-    
+
     }
 
     <# Check for Outlook MIPSDK log folder #>
@@ -1719,10 +1450,10 @@ Function fncEnableLogging {
 
         <# Clean Outlook MIPSDK log folder #>
         Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\Outlook\MIPSDK\mip" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-            
+
         <# Logging #>
         fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "Outlook MIPSDK log folder" -strLogValue "Cleared"
-    
+
     }
 
     <# Check for Outlook MIPSDKPDF log folder #>
@@ -1730,40 +1461,40 @@ Function fncEnableLogging {
 
         <# Clean Outlook MIPSDKPDF log folder #>
         Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\Outlook\MIPSDKPDF\mip" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-            
+
         <# Logging #>
         fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "Outlook MIPSDKPDF log folder" -strLogValue "Cleared"
-    
-    }    
+
+    }
 
     <# Check for OneNote MIPSDK log folder #>
     If ($(Test-Path -Path $env:LOCALAPPDATA\Microsoft\OneNote\MIPSDK\mip) -Eq $true) {
 
         <# Clean OneNote MIPSDK log folder #>
         Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\OneNote\MIPSDK\mip" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-            
+
         <# Logging #>
         fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "OneNote MIPSDK log folder" -strLogValue "Cleared"
-    
-    }  
+
+    }
 
     <# Check for Office MIPSDK log folder #>
     If ($(Test-Path -Path $env:LOCALAPPDATA\Microsoft\Office\MIPSDK\mip) -Eq $true) {
 
         <# Clean Office MIPSDK log folder #>
         Remove-Item -Path "$env:LOCALAPPDATA\Microsoft\Office\MIPSDK\mip" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-            
+
         <# Logging #>
         fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "Office MIPSDK log folder" -strLogValue "Cleared"
-    
-    }  
+
+    }
 
     <# Detect Diagnostic folder #>
     If ($(Test-Path -Path $env:TEMP\Diagnostics) -Eq $true) {
 
         <# Clean Office Diagnostics folder #>
         Remove-Item -Path "$env:TEMP\Diagnostics" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-        
+
         <# Logging #>
         fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "Office Diagnostics log folder" -strLogValue "Cleared"
 
@@ -1774,7 +1505,7 @@ Function fncEnableLogging {
 
     <# Flush DNS #>
     ipconfig.exe /flushdns | Out-Null
-    
+
     <# Logging #>
     fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "Flush DNS" -strLogValue "Called"
 
@@ -1783,44 +1514,44 @@ Function fncEnableLogging {
 
     <# Start PSR #>
     psr.exe /gui 0 /start /output "$Global:strUniqueLogFolder\ProblemSteps.zip"
-    
+
     <# Logging #>
     fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "PSR" -strLogValue "Started"
 
     <# Clean temp folder for office.log (TCOTrace) #>
     If ($(Test-Path $Global:strTempFolder"\office.log") -Eq $true) {
-    
+
         <# Remove file office.log #>
         Remove-Item -Path "$Global:strTempFolder\office.log" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-        
+
         <# Logging #>
         fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "Office TCOTrace temp file" -strLogValue "Cleared"
-    
+
     }
 
     <# Clean temp folder for office log (machine name) #>
     If ($(Test-Path "$Global:strTempFolder\$([System.Environment]::MachineName)*.log") -Eq $true) {
-    
+
         <# Remove file office.log #>
         Remove-Item -Path "$Global:strTempFolder\$([System.Environment]::MachineName)*.log" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-        
+
         <# Logging #>
         fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "Office log temp file" -strLogValue "Cleared"
-    
+
     }
 
     <# Progress bar update #>
     Write-Progress -Activity "  Logging enabled" -Completed
 
     <# Logging #>
-    fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "Enable logging" -strLogValue "Proceeded" 
+    fncLogging -strLogFunction "fncEnableLogging" -strLogDescription "Enable logging" -strLogValue "Proceeded"
 
 }
 
 Function fncDisableLogging {
 
     <# Logging #>
-    fncLogging -strLogFunction "fncDisableLogging" -strLogDescription "Disable logging" -strLogValue "Triggered" 
+    fncLogging -strLogFunction "fncDisableLogging" -strLogDescription "Disable logging" -strLogValue "Triggered"
 
     <# Progress bar #>
     Write-Progress -Activity " Disable logging, please wait..." -PercentComplete 0
@@ -1829,11 +1560,11 @@ Function fncDisableLogging {
     If ($Global:bolRunningPrivileged -eq $true) {
 
         <# Progress bar update #>
-        Write-Progress -Activity " Disable logging: CAPI2 event log..." -PercentComplete (100/5 * 1) 
+        Write-Progress -Activity " Disable logging: CAPI2 event log..." -PercentComplete (100/5 * 1)
 
         <# Disable CAPI2 event log #>
         wevtutil.exe set-log Microsoft-Windows-CAPI2/Operational /enabled:false
-    
+
         <# Logging #>
         fncLogging -strLogFunction "fncDisableLogging" -strLogDescription "CAPI2 event log" -strLogValue "Disabled"
 
@@ -1852,7 +1583,7 @@ Function fncDisableLogging {
     <# Progress bar update #>
     Write-Progress -Activity " Disable logging: Office TCOTrace..." -PercentComplete (100/5 * 3)
 
-    <# Disable Office TCOTrace logging for Office 2016 (16.0) #>
+    <# Disable Office TCOTrace logging #>
     fncDeleteItem "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Debug"
 
     <# Logging #>
@@ -1863,65 +1594,40 @@ Function fncDisableLogging {
 
     <# Stop PSR #>
     psr.exe /stop
-    
+
     <# Logging #>
     fncLogging -strLogFunction "fncDisableLogging" -strLogDescription "PSR" -strLogValue "Disabled"
 
     <# Implement registry key for fncValidateForActivatedLogging to check whether logging was left enabled (for problem record) #>
-    If ($(Test-Path -Path "HKCU:\SOFTWARE\Microsoft\ComplianceUtility") -Eq $false) { <# Detect/create path to check for logging enabled #>
+    If ($(Test-Path -Path "HKCU:\SOFTWARE\Schiroky\ComplianceUtility") -Eq $false) { <# Detect/create path to check for logging enabled #>
 
         <# Create registry key #>
-        New-Item -Path "HKCU:\SOFTWARE\Microsoft\ComplianceUtility" -Force | Out-Null
+        New-Item -Path "HKCU:\SOFTWARE\Schiroky\ComplianceUtility" -Force | Out-Null
 
     }
 
     <# Implement registry key to check for enabled logging on next start, and rollback settings if necessary #>
-    New-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\ComplianceUtility" -Name "LoggingActivated" -Value $false -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
+    New-ItemProperty -Path "HKCU:\SOFTWARE\Schiroky\ComplianceUtility" -Name "LoggingActivated" -Value $false -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
 
     <# Progress bar update #>
     Write-Progress -Activity " Logging disabled" -Completed
 
     <# Logging #>
-    fncLogging -strLogFunction "fncDisableLogging" -strLogDescription "Disable logging" -strLogValue "Proceeded" 
+    fncLogging -strLogFunction "fncDisableLogging" -strLogDescription "Disable logging" -strLogValue "Proceeded"
 
 }
 
 <# Check whether logging (for problem record) was left enabled #>
 Function fncValidateForActivatedLogging {
 
-    <# Detect Windows #>
-    If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
+    <# Read registry key to check for enabled logging. Used in fncEnableLogging, and fncDisableLogging #>
+    If ((Get-ItemProperty "HKCU:\SOFTWARE\Schiroky\ComplianceUtility" -Name LoggingActivated -ErrorAction SilentlyContinue).LoggingActivated -eq $true) {
 
-        <# Read registry key to check for enabled logging. Used in fncEnableLogging, and fncDisableLogging #>
-        If ((Get-ItemProperty "HKCU:\SOFTWARE\Microsoft\ComplianceUtility" -Name LoggingActivated -ErrorAction SilentlyContinue).LoggingActivated -eq $true) {
+         <# Logging #>
+        fncLogging -strLogFunction "fncValidateForActivatedLogging" -strLogDescription "Disable logging" -strLogValue "Initiated"
 
-            <# Logging #>
-            fncLogging -strLogFunction "fncValidateForActivatedLogging" -strLogDescription "Disable logging" -strLogValue "Initiated" 
-            
-            <# Call DisableLogging #>
-            fncDisableLogging
-
-        }
-
-    }
-
-    <# Detect macOS #>
-    If ($IsMacOS -eq $true) {
-
-        <# Disable Office ULS logging #>
-        Try {
-                
-            <# Pro-active disabling Office ULS logging #>
-            defaults delete com.microsoft.office msoridEnableLogging
-            defaults delete com.microsoft.office msoridDefaultMinimumSeverity
-
-        }
-        Catch { 
-        
-            <# Logging #>
-            fncLogging -strLogFunction "fncValidateForActivatedLogging" -strLogDescription "Office ULS logging" -strLogValue "Disable Failed"
-        
-        }
+        <# Call DisableLogging #>
+        fncDisableLogging
 
     }
 
@@ -1930,790 +1636,791 @@ Function fncValidateForActivatedLogging {
 Function fncCollectingLogs {
 
     <# Logging #>
-    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Collecting logs" -strLogValue "Triggered" 
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Collecting logs" -strLogValue "Triggered"
 
     <# Progress bar #>
     Write-Progress -Activity " Collecting logs, please wait..." -PercentComplete 0
 
-    <# Detect Windows #>
-    If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
+    <# Collecting system information #>
+    Get-ComputerInfo > "$Global:strUniqueLogFolder\SystemInformation.log"
 
-        <# Collecting system information #>
-        Get-ComputerInfo > "$Global:strUniqueLogFolder\SystemInformation.log"
+    <# Collecting device join status #>
+    dsregcmd.exe /status | Out-File "$Global:strUniqueLogFolder\SystemInformation.log" -Append
 
-        <# Collecting device join status #>
-        dsregcmd.exe /status | Out-File "$Global:strUniqueLogFolder\SystemInformation.log" -Append
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export system information" -strLogValue "SystemInformation.log"
+
+    <# Check for administrative permissons, and enabling admininistrative actions #>
+    If ($Global:bolRunningPrivileged -eq $true) {
+
+        <# Progress bar update #>
+        Write-Progress -Activity " Collecting logs: CAPI2 event log..." -PercentComplete (100/26 * 1)
+
+        <# Export CAPI2 event log #>
+        wevtutil.exe export-log Microsoft-Windows-CAPI2/Operational "$Global:strUniqueLogFolder\CAPI2.evtx" /overwrite:true
 
         <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export system information" -strLogValue "SystemInformation.log"
+        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export CAPI2 event log" -strLogValue "CAPI2.evtx"
 
-        <# Check for administrative permissons, and enabling admininistrative actions #>
-        If ($Global:bolRunningPrivileged -eq $true) {
+        <# Progress bar update #>
+        Write-Progress -Activity " Collecting logs: Azure Information Protection event log..." -PercentComplete (100/26 * 2)
 
-            <# Progress bar update #>
-            Write-Progress -Activity " Collecting logs: CAPI2 event log..." -PercentComplete (100/26 * 1)
+        <# Actions when AIP event log exist #>
+        If ([System.Diagnostics.EventLog]::Exists("Azure Information Protection") -Eq $true) {
 
-            <# Export CAPI2 event log #>
-            wevtutil.exe export-log Microsoft-Windows-CAPI2/Operational "$Global:strUniqueLogFolder\CAPI2.evtx" /overwrite:true
-        
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export CAPI2 event log" -strLogValue "CAPI2.evtx"
-
-            <# Progress bar update #>
-            Write-Progress -Activity " Collecting logs: Azure Information Protection event log..." -PercentComplete (100/26 * 2)
-
-            <# Actions when AIP event log exist #>
-            If ([System.Diagnostics.EventLog]::Exists("Azure Information Protection") -Eq $true) {
-
-                <# Export AIP event log #>
-                wevtutil.exe export-log "Azure Information Protection" "$Global:strUniqueLogFolder\AIP.evtx" /overwrite:true
-            
-                <# Logging #>
-                fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export AIP event log" -strLogValue "AIP.evtx"
-
-            }
-
-            <# Progress bar update #>
-            Write-Progress -Activity " Collecting logs: Purview Information Protection event log..." -PercentComplete (100/27 * 3)
-
-            <# Actions when 'PIP' event log exist #>
-            If ([System.Diagnostics.EventLog]::Exists("Microsoft Purview Information Protection") -Eq $true) {
-
-                <# Export AIP event log #>
-                wevtutil.exe export-log "Microsoft Purview Information Protection" "$Global:strUniqueLogFolder\PIP.evtx" /overwrite:true
-            
-                <# Logging #>
-                fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export PIP event log" -strLogValue "PIP.evtx"
-
-            }
-
-            <# Progress bar update #>
-            Write-Progress -Activity " Collecting logs: Filter drivers..." -PercentComplete (100/26 * 4)
-
-            <# Export filter drivers #>
-            fltmc.exe filters > "$Global:strUniqueLogFolder\Filters.log"
+            <# Export AIP event log #>
+            wevtutil.exe export-log "Azure Information Protection" "$Global:strUniqueLogFolder\AIP.evtx" /overwrite:true
 
             <# Logging #>
-            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export filter drivers" -strLogValue "Filters.log"
+            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export AIP event log" -strLogValue "AIP.evtx"
 
         }
 
         <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: PSR recording..." -PercentComplete (100/26 * 5)
+        Write-Progress -Activity " Collecting logs: Purview Information Protection event log..." -PercentComplete (100/27 * 3)
 
-        <# Stop PSR #>
-        psr.exe /stop
+        <# Actions when 'PIP' event log exist #>
+        If ([System.Diagnostics.EventLog]::Exists("Microsoft Purview Information Protection") -Eq $true) {
 
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "PSR" -strLogValue "Stopped"
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export PSR" -strLogValue "ProblemSteps.zip"
+            <# Export AIP event log #>
+            wevtutil.exe export-log "Microsoft Purview Information Protection" "$Global:strUniqueLogFolder\PIP.evtx" /overwrite:true
 
-        <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: Application event log..." -PercentComplete (100/26 * 6)
+            <# Logging #>
+            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export PIP event log" -strLogValue "PIP.evtx"
 
-        <# Export Application event log #>
-        wevtutil.exe export-log Application "$Global:strUniqueLogFolder\Application.evtx" /overwrite:true
-
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Application event log" -strLogValue "Application.evtx"
+        }
 
         <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: System event log..." -PercentComplete (100/26 * 7)
+        Write-Progress -Activity " Collecting logs: Filter drivers..." -PercentComplete (100/26 * 4)
 
-        <# Export System event log #>
-        wevtutil.exe export-log System "$Global:strUniqueLogFolder\System.evtx" /overwrite:true
-        
+        <# Export filter drivers #>
+        fltmc.exe filters > "$Global:strUniqueLogFolder\Filters.log"
+
         <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export System event log" -strLogValue "System.evtx"
+        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export filter drivers" -strLogValue "Filters.log"
 
-        <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: Office log files..." -PercentComplete (100/26 * 8)
+    }
 
-        <# Check for Office log path and create it, if it not exist #>
-        If ($(Test-Path -Path "$Global:strUniqueLogFolder\Office") -Eq $false) {
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: PSR recording..." -PercentComplete (100/26 * 5)
 
-            <# Create Office log folder #>
-            New-Item -ItemType Directory -Force -Path "$Global:strUniqueLogFolder\Office" | Out-Null
-  
-            <# Check for Office CLP path #>
-            If ($(Test-Path -Path $env:LOCALAPPDATA\Microsoft\Office\CLP) -Eq $true) {
+    <# Stop PSR #>
+    psr.exe /stop
 
-                <# Perform action only, if the CLP folder contain files (Note: Afer a RESET this folder is empty). #>
-                If (((Get-ChildItem -LiteralPath $env:LOCALAPPDATA\Microsoft\Office\CLP -File -Force | Select-Object -First 1 | Measure-Object).Count -ne 0)) {
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "PSR" -strLogValue "Stopped"
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export PSR" -strLogValue "ProblemSteps.zip"
 
-                    <# Compress label and policy xml files into zip file (overwrites) #>
-                    Compress-Archive -Path $env:LOCALAPPDATA\Microsoft\Office\CLP"\*" -DestinationPath "$Global:strUniqueLogFolder\Office\OfficeCLP" -Force -ErrorAction SilentlyContinue
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: Application event log..." -PercentComplete (100/26 * 6)
 
-                    <# Logging #>
-                    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Office CLP" -strLogValue "\Office\OfficeCLP.zip"
+    <# Export Application event log #>
+    wevtutil.exe export-log Application "$Global:strUniqueLogFolder\Application.evtx" /overwrite:true
 
-                }
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Application event log" -strLogValue "Application.evtx"
 
-            }
-   
-            <# Check for Office DLP path #>
-            If ($(Test-Path -Path "$Global:strUniqueLogFolder\Office\DLP") -Eq $true) {
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: System event log..." -PercentComplete (100/26 * 7)
 
-                <# Perform action only, if the DLP folder contain files (Note: Afer a RESET this folder is empty). #>
-                If (((Get-ChildItem -LiteralPath $env:LOCALAPPDATA\Microsoft\Office\DLP -File -Force | Select-Object -First 1 | Measure-Object).Count -ne 0)) {
+    <# Export System event log #>
+    wevtutil.exe export-log System "$Global:strUniqueLogFolder\System.evtx" /overwrite:true
 
-                    <# Compress DLP folder content into zip file (overwrites) #>
-                    Compress-Archive -Path $env:LOCALAPPDATA\Microsoft\Office\DLP"\*" -DestinationPath "$Global:strUniqueLogFolder\Office\OfficeDLP" -Force -ErrorAction SilentlyContinue
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export System event log" -strLogValue "System.evtx"
 
-                    <# Logging #>
-                    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Office DLP" -strLogValue "\Office\OfficeDLP.zip"
+    <# Progress bar update #>
+     Write-Progress -Activity " Collecting logs: Office log files..." -PercentComplete (100/26 * 8)
 
-                }
+    <# Check for Office log path and create it, if it not exist #>
+    If ($(Test-Path -Path "$Global:strUniqueLogFolder\Office") -Eq $false) {
 
-            }
+        <# Create Office log folder #>
+        New-Item -ItemType Directory -Force -Path "$Global:strUniqueLogFolder\Office" | Out-Null
 
-            <# Check for Outlook MIPSDKPDF path #>
-            If ($(Test-Path -Path "$Global:strUniqueLogFolder\Outlook\MIPSDKPDF\mip") -Eq $true) {
+        <# Check for Office CLP path #>
+        If ($(Test-Path -Path $env:LOCALAPPDATA\Microsoft\Office\CLP) -Eq $true) {
 
-                <# Perform action only, if the MIPSDKPDF folder contain files (Note: Afer a RESET this folder is empty). #>
-                If (((Get-ChildItem -LiteralPath $env:LOCALAPPDATA\Microsoft\Outlook\MIPSDKPDF\mip -File -Force | Select-Object -First 1 | Measure-Object).Count -ne 0)) {
+            <# Perform action only, if the CLP folder contain files (Note: Afer a RESET this folder is empty). #>
+            If (((Get-ChildItem -LiteralPath $env:LOCALAPPDATA\Microsoft\Office\CLP -File -Force | Select-Object -First 1 | Measure-Object).Count -ne 0)) {
 
-                    <# Compress MIPSDKPDF folder content into zip file (overwrites) #>
-                    Compress-Archive -Path $env:LOCALAPPDATA\Microsoft\Office\Outlook\MIPSDKPDF"\*" -DestinationPath "$Global:strUniqueLogFolder\Office\MIPSDKPDF-Outlook" -Force -ErrorAction SilentlyContinue
+                <# Compress label and policy xml files into zip file (overwrites) #>
+                Compress-Archive -Path $env:LOCALAPPDATA\Microsoft\Office\CLP"\*" -DestinationPath "$Global:strUniqueLogFolder\Office\OfficeCLP" -Force -ErrorAction SilentlyContinue
 
-                    <# Logging #>
-                    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Outlook MIPSDKPDF" -strLogValue "\Office\MIPSDKPDF-Outlook.zip"
-
-                }
+                <# Logging #>
+                fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Office CLP" -strLogValue "\Office\OfficeCLP.zip"
 
             }
 
         }
 
-        <# Define array for MIPSDK apps/folders #>
-        $Private:arrMIPSDKApps = "Word", "Excel", "PowerPoint", "Outlook", "OneNote", "Office"
-        $Private:strMipPathItem
+        <# Check for Office DLP path #>
+        If ($(Test-Path -Path "$Global:strUniqueLogFolder\Office\DLP") -Eq $true) {
 
-        <# Loop though array and collect MIPSDK logs #>
-        ForEach ($Private:strMipPathItem in $Private:arrMIPSDKApps) {
+            <# Perform action only, if the DLP folder contain files (Note: Afer a RESET this folder is empty). #>
+            If (((Get-ChildItem -LiteralPath $env:LOCALAPPDATA\Microsoft\Office\DLP -File -Force | Select-Object -First 1 | Measure-Object).Count -ne 0)) {
 
-            <# Check for each App MIPSDK log path, and collect log files #>
-            If ($(Test-Path -Path $env:LOCALAPPDATA\Microsoft\$Private:strMipPathItem\MIPSDK\mip) -Eq $true) {
+                <# Compress DLP folder content into zip file (overwrites) #>
+                Compress-Archive -Path $env:LOCALAPPDATA\Microsoft\Office\DLP"\*" -DestinationPath "$Global:strUniqueLogFolder\Office\OfficeDLP" -Force -ErrorAction SilentlyContinue
 
-                <# Collect MIPSDK log folder only, if the folder contains files (Note: Afer a RESET this folder is empty). #>
-                If (((Get-ChildItem -LiteralPath $env:LOCALAPPDATA\Microsoft\$Private:strMipPathItem\MIPSDK\mip -File -Force | Select-Object -First 1 | Measure-Object).Count -ne 0)) {
-    
-                    <# Compress MIPSDK\mip content to .zip file (overwrites) #>
-                    Compress-Archive -Path $env:LOCALAPPDATA\Microsoft\$Private:strMipPathItem\MIPSDK\mip"\*" -DestinationPath "$Global:strUniqueLogFolder\Office\MIPSDK-$Private:strMipPathItem.zip" -Force -ErrorAction SilentlyContinue
-    
-                    <# Logging #>
-                    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export $Private:strMipPathItem MIPSDK logs" -strLogValue "\Office\MIPDSK-$Private:strMipPathItem.zip"
-    
-                }
-    
+                <# Logging #>
+                fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Office DLP" -strLogValue "\Office\OfficeDLP.zip"
+
             }
 
         }
 
-        <# Releasing MIPSDK variables/array #>
-        $Private:arrMIPSDKApps = $null
-        $Private:strMipPathItem = $null
+        <# Check for Outlook MIPSDKPDF path #>
+        If ($(Test-Path -Path "$Global:strUniqueLogFolder\Outlook\MIPSDKPDF\mip") -Eq $true) {
 
-        <# Copy Office Diagnostics folder from temp folder to Office logs folder #>
-        fncCopyItem $env:TEMP\Diagnostics "$Global:strUniqueLogFolder\Office" "Diagnostics\*"
+            <# Perform action only, if the MIPSDKPDF folder contain files (Note: Afer a RESET this folder is empty). #>
+            If (((Get-ChildItem -LiteralPath $env:LOCALAPPDATA\Microsoft\Outlook\MIPSDKPDF\mip -File -Force | Select-Object -First 1 | Measure-Object).Count -ne 0)) {
 
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Office Diagnostics logs" -strLogValue "\Office\Diagnostics"
+                <# Compress MIPSDKPDF folder content into zip file (overwrites) #>
+                Compress-Archive -Path $env:LOCALAPPDATA\Microsoft\Office\Outlook\MIPSDKPDF"\*" -DestinationPath "$Global:strUniqueLogFolder\Office\MIPSDKPDF-Outlook" -Force -ErrorAction SilentlyContinue
 
-        <# Copy office log files from temp folder to logs folder #>
-        fncCopyItem $Global:strTempFolder"\office.log" "$Global:strUniqueLogFolder\Office\office.log" "office.log"
-
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Office log" -strLogValue "office.log"
-
-        <# Copy Office logging files for 2016 (16.0) to logs folder #>
-        fncCopyItem "$Global:strTempFolder\$([System.Environment]::MachineName)*.log" "$Global:strUniqueLogFolder\Office" "Office\$([System.Environment]::MachineName)*.log"
-
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Office log" -strLogValue "\Office"
-
-        <# Clean Office log files from temp folder #>
-        fncDeleteItem "$Global:strTempFolder\$([System.Environment]::MachineName)*.log"
-        fncDeleteItem "$Global:strTempFolder\Office.log"
-
-        # Progress bar update #>
-        Write-Progress -Activity " Collecting logs: AIP/PIP/Office Diagnostics logs folders..." -PercentComplete (100/26 * 9)
-
-        <# Remember default progress bar status: 'Continue' #>
-        $Private:strOriginalPreference = $Global:ProgressPreference 
-        $Global:ProgressPreference = "SilentlyContinue" <# Hiding progress bar #>   
-
-        <# Export AIP logs folder #>
-        If (Get-Module -ListAvailable -Name AzureInformationProtection, PurviewInformationProtection) {
-
-            <# Check for AIP #>
-            If (Get-Module -ListAvailable -Name AzureInformationProtection){
-            
-                <# Logging AIP client version #>
-                fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "AIP client version" -strLogValue $((Get-Module -ListAvailable -Name AzureInformationProtection).Version).ToString()
-
-                <# Actions on PowerShell Core (7.x) for compatibility mode #>
-                If ($PSVersionTable.PSEdition.ToString() -eq "Core") {
-
-                    <# Remove AzureInformationProtection module, because it's not compatible with PowerShell Core (7.x) #>
-                    Remove-Module -Name AzureInformationProtection -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
-        
-                    <# Import AzureInformationProtection module in compatiblity mode #>
-                    Import-Module -Name AzureInformationProtection -UseWindowsPowerShell -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
-        
-                    <# Logging #>
-                    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "AzureInformationProtection compatiblity mode" -strLogValue $true
-
-                }
+                <# Logging #>
+                fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Outlook MIPSDKPDF" -strLogValue "\Office\MIPSDKPDF-Outlook.zip"
 
             }
 
-            <# Check for PIP #>
-            If (Get-Module -ListAvailable -Name PurviewInformationProtection){
-            
-                <# Logging: PIP client version #>
-                fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "PIP client version" -strLogValue $((Get-Module -ListAvailable -Name PurviewInformationProtection).Version).ToString()
+        }
 
-                <# Actions on PowerShell Core (7.x) for compatibility mode #>
-                If ($PSVersionTable.PSEdition.ToString() -eq "Core") {
+    }
 
-                    <# Remove AzureInformationProtection module, because it's not compatible with PowerShell Core (7.x) #>
-                    Remove-Module -Name PurviewInformationProtection -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
-        
-                    <# Import AzureInformationProtection module in compatiblity mode #>
-                    Import-Module -Name PurviewInformationProtection -UseWindowsPowerShell -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
-        
-                    <# Logging #>
-                    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "PurviewInformationProtection compatiblity mode" -strLogValue $true
+    <# Define array for MIPSDK apps/folders #>
+    $Private:arrMIPSDKApps = "Word", "Excel", "PowerPoint", "Outlook", "OneNote", "Office"
+    $Private:strMipPathItem
 
-                }
+    <# Loop though array and collect MIPSDK logs #>
+    ForEach ($Private:strMipPathItem in $Private:arrMIPSDKApps) {
+
+        <# Check for each App MIPSDK log path, and collect log files #>
+        If ($(Test-Path -Path $env:LOCALAPPDATA\Microsoft\$Private:strMipPathItem\MIPSDK\mip) -Eq $true) {
+
+            <# Collect MIPSDK log folder only, if the folder contains files (Note: Afer a RESET this folder is empty). #>
+            If (((Get-ChildItem -LiteralPath $env:LOCALAPPDATA\Microsoft\$Private:strMipPathItem\MIPSDK\mip -File -Force | Select-Object -First 1 | Measure-Object).Count -ne 0)) {
+
+                <# Compress MIPSDK\mip content to .zip file (overwrites) #>
+                Compress-Archive -Path $env:LOCALAPPDATA\Microsoft\$Private:strMipPathItem\MIPSDK\mip"\*" -DestinationPath "$Global:strUniqueLogFolder\Office\MIPSDK-$Private:strMipPathItem.zip" -Force -ErrorAction SilentlyContinue
+
+                <# Logging #>
+                fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export $Private:strMipPathItem MIPSDK logs" -strLogValue "\Office\MIPDSK-$Private:strMipPathItem.zip"
 
             }
 
-            <# Try to export log folders with authentication; fails without #>
+        }
+
+    }
+
+    <# Releasing MIPSDK variables/array #>
+    $Private:arrMIPSDKApps = $null
+    $Private:strMipPathItem = $null
+
+    <# Copy Office Diagnostics folder from temp folder to Office logs folder #>
+    fncCopyItem $env:TEMP\Diagnostics "$Global:strUniqueLogFolder\Office" "Diagnostics\*"
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Office Diagnostics logs" -strLogValue "\Office\Diagnostics"
+
+    <# Copy office log files from temp folder to logs folder #>
+    fncCopyItem $Global:strTempFolder"\office.log" "$Global:strUniqueLogFolder\Office\office.log" "office.log"
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Office log" -strLogValue "office.log"
+
+    <# Copy Office logging files for 2016 (16.0) to logs folder #>
+    fncCopyItem "$Global:strTempFolder\$([System.Environment]::MachineName)*.log" "$Global:strUniqueLogFolder\Office" "Office\$([System.Environment]::MachineName)*.log"
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Office log" -strLogValue "\Office"
+
+    <# Clean Office log files from temp folder #>
+    fncDeleteItem "$Global:strTempFolder\$([System.Environment]::MachineName)*.log"
+    fncDeleteItem "$Global:strTempFolder\Office.log"
+
+    # Progress bar update #>
+    Write-Progress -Activity " Collecting logs: AIP/PIP/Office Diagnostics logs folders..." -PercentComplete (100/26 * 9)
+
+    <# Remember default progress bar status: 'Continue' #>
+    $Private:strOriginalPreference = $Global:ProgressPreference
+    $Global:ProgressPreference = "SilentlyContinue" <# Hiding progress bar #>
+
+    <# Export AIP logs folder #>
+    If (Get-Module -ListAvailable -Name AzureInformationProtection, PurviewInformationProtection) {
+
+        <# Check for AIP #>
+        If (Get-Module -ListAvailable -Name AzureInformationProtection){
+
+            <# Logging AIP client version #>
+            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "AIP client version" -strLogValue $((Get-Module -ListAvailable -Name AzureInformationProtection).Version).ToString()
+
+            <# Actions on PowerShell Core (7.x) for compatibility mode #>
+            If ($PSVersionTable.PSEdition.ToString() -eq "Core") {
+
+                <# Remove AzureInformationProtection module, because it's not compatible with PowerShell Core (7.x) #>
+                Remove-Module -Name AzureInformationProtection -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
+
+                <# Import AzureInformationProtection module in compatiblity mode #>
+                Import-Module -Name AzureInformationProtection -UseWindowsPowerShell -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
+
+                <# Logging #>
+                fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "AzureInformationProtection compatiblity mode" -strLogValue $true
+
+            }
+
+        }
+
+        <# Check for PIP #>
+        If (Get-Module -ListAvailable -Name PurviewInformationProtection){
+
+            <# Logging: PIP client version #>
+            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "PIP client version" -strLogValue $((Get-Module -ListAvailable -Name PurviewInformationProtection).Version).ToString()
+
+            <# Actions on PowerShell Core (7.x) for compatibility mode #>
+            If ($PSVersionTable.PSEdition.ToString() -eq "Core") {
+
+                <# Remove AzureInformationProtection module, because it's not compatible with PowerShell Core (7.x) #>
+                Remove-Module -Name PurviewInformationProtection -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
+
+                <# Import AzureInformationProtection module in compatiblity mode #>
+                Import-Module -Name PurviewInformationProtection -UseWindowsPowerShell -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
+
+                <# Logging #>
+                fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "PurviewInformationProtection compatiblity mode" -strLogValue $true
+
+            }
+
+        }
+
+        <# Try to export log folders with authentication; fails without #>
+        Try {
+
+            <# Export AIP log folders #>
+            Export-AIPLogs -FileName "$Global:strUniqueLogFolder\AIPLogs.zip" | Out-Null
+
+            <# Logging #>
+            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export AIP Log folders" -strLogValue $true
+
+        }
+        Catch{ <# Actions without authentication #>
+
+            <# Clear authentication #>
+            Clear-AIPAuthentication -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
+
+            <# Output #>
+            Write-Output "Please authenticate with your user credentials to retrieve your AIP/PIP log folders."
+
             Try {
 
-                <# Export AIP log folders #>
-                Export-AIPLogs -FileName "$Global:strUniqueLogFolder\AIPLogs.zip" | Out-Null
-
-                <# Logging #>
-                fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export AIP Log folders" -strLogValue $true                
-
-            }
-            Catch{ <# Actions without authentication #>
-
-                <# Clear authentication #>
-                Clear-AIPAuthentication -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
-
-                <# Output #>
-                Write-Output "Please authenticate with your user credentials to retrieve your AIP/PIP log folders."
-
                 <# Authenticate for accessing logs #>
-                Set-AIPAuthentication
+                Set-AIPAuthentication -ErrorAction Stop | Out-Null
 
                 <# Export AIP log folders #>
-                Export-AIPLogs -FileName "$Global:strUniqueLogFolder\AIPLogs.zip" -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
+                Export-AIPLogs -FileName "$Global:strUniqueLogFolder\AIPLogs.zip" -ErrorAction Stop -WarningAction SilentlyContinue | Out-Null
 
                 <# Logging #>
                 fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export AIP Log folders" -strLogValue $true
 
             }
+            Catch {
 
-        }
-        Else {<# Action without any AIP/PIP client #>
-            
-            <# Logging: If no AIP/PIP client is installed #>
-            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "AIP/PIP client installed" -strLogValue $false
+                $Private:strAIPLogExportError = $_.Exception.Message
 
-            <# Export Office DLP content to logs folder #>
-            fncCopyItem $env:LOCALAPPDATA\Microsoft\Office\DLP "$Global:strUniqueLogFolder\Office" "DLP\*"
+                If ($Private:strAIPLogExportError -match "(?i)cancel(?:ed|led)?") {
+                    Write-ColoredOutput Yellow "AIP/PIP log folder collection was canceled by the user. Continuing with the remaining logs.`n"
+                    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export AIP Log folders" -strLogValue "Canceled by user"
+                }
+                Else {
+                    Write-ColoredOutput Red "AIP/PIP log folder collection failed: $Private:strAIPLogExportError`n"
+                    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export AIP Log folders" -strLogValue "Failed: $Private:strAIPLogExportError"
+                }
 
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Office DLP content" -strLogValue "\Office\DLP"
+                $Private:strAIPLogExportError = $null
 
-            <# Export Office Diagnostics content to logs folder #>
-            fncCopyItem $env:TEMP\Diagnostics "$Global:strUniqueLogFolder\Office" "Diagnostics\*"
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Office Diagnostics content" -strLogValue "\Office"
-
-            <# Export MSIP/MSIPC content to logs folder #>
-            fncCopyItem $env:LOCALAPPDATA\Microsoft\MSIP "$Global:strUniqueLogFolder\MSIP" "MSIP\*"
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export MSIP content" -strLogValue "\MSIP"
-
-            <# Copy files to logs folder #>
-            fncCopyItem $env:LOCALAPPDATA\Microsoft\MSIPC "$Global:strUniqueLogFolder\MSIPC" "MSIPC\*"
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export MSIPC content" -strLogValue "\MSIPC"
+            }
 
         }
 
-        <# Set back progress bar to previous setting #>
-        $Global:ProgressPreference = $Private:strOriginalPreference  
+    }
+    Else {<# Action without any AIP/PIP client #>
 
-        <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: WinHTTP..." -PercentComplete (100/26 * 10)
+        <# Logging: If no AIP/PIP client is installed #>
+        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "AIP/PIP client installed" -strLogValue $false
 
-        <# Export WinHTTP #>
-        netsh.exe winhttp show proxy > "$Global:strUniqueLogFolder\WinHTTP.log"
-        
+        <# Export Office DLP content to logs folder #>
+        fncCopyItem $env:LOCALAPPDATA\Microsoft\Office\DLP "$Global:strUniqueLogFolder\Office" "DLP\*"
+
         <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export WinHTTP" -strLogValue "WinHTTP.log"
+        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Office DLP content" -strLogValue "\Office\DLP"
+
+        <# Export Office Diagnostics content to logs folder #>
+        fncCopyItem $env:TEMP\Diagnostics "$Global:strUniqueLogFolder\Office" "Diagnostics\*"
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Office Diagnostics content" -strLogValue "\Office"
+
+        <# Export MSIP/MSIPC content to logs folder #>
+        fncCopyItem $env:LOCALAPPDATA\Microsoft\MSIP "$Global:strUniqueLogFolder\MSIP" "MSIP\*"
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export MSIP content" -strLogValue "\MSIP"
+
+        <# Copy files to logs folder #>
+        fncCopyItem $env:LOCALAPPDATA\Microsoft\MSIPC "$Global:strUniqueLogFolder\MSIPC" "MSIPC\*"
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export MSIPC content" -strLogValue "\MSIPC"
+
+    }
+
+    <# Set back progress bar to previous setting #>
+    $Global:ProgressPreference = $Private:strOriginalPreference
+
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: WinHTTP..." -PercentComplete (100/26 * 10)
+
+    <# Export WinHTTP #>
+    netsh.exe winhttp show proxy > "$Global:strUniqueLogFolder\WinHTTP.log"
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export WinHTTP" -strLogValue "WinHTTP.log"
+
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: WinHTTP (WoW6432)..." -PercentComplete (100/26 * 11)
+
+    <# Export WinHTTP_WoW6432 (only 64-bit OS) #>
+    If ((Get-CimInstance Win32_OperatingSystem  -Verbose:$false).OSArchitecture -eq "64-bit") {
+
+        & $env:WINDIR\SysWOW64\netsh.exe winhttp show proxy > "$Global:strUniqueLogFolder\WinHTTP_WoW6432.log"
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export WinHTTP_WoW6432" -strLogValue "WinHTTP_WoW6432.log"
+
+    }
+
+    <# Export AutoConfigURL #>
+    If ((Get-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\" -Name AutoConfigURL -ErrorAction SilentlyContinue).AutoConfigURL) {
 
         <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: WinHTTP (WoW6432)..." -PercentComplete (100/26 * 11)
+        Write-Progress -Activity " Collecting logs: AutoConfigURL..." -PercentComplete (100/26 * 12)
 
-        <# Export WinHTTP_WoW6432 (only 64-bit OS) #>
-        If ((Get-CimInstance Win32_OperatingSystem  -Verbose:$false).OSArchitecture -eq "64-bit") {
-
-            & $env:WINDIR\SysWOW64\netsh.exe winhttp show proxy > "$Global:strUniqueLogFolder\WinHTTP_WoW6432.log"
-        
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export WinHTTP_WoW6432" -strLogValue "WinHTTP_WoW6432.log"
-
-        }
+        <# Logging #>
+        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export IE AutoConfigURL" -strLogValue "AutoConfigURL.log" <# Windows version and release ID #>
 
         <# Export AutoConfigURL #>
-        If ((Get-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\" -Name AutoConfigURL -ErrorAction SilentlyContinue).AutoConfigURL) {
-
-            <# Progress bar update #>
-            Write-Progress -Activity " Collecting logs: AutoConfigURL..." -PercentComplete (100/26 * 12)
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export IE AutoConfigURL" -strLogValue "AutoConfigURL.log" <# Windows version and release ID #>
-
-            <# Export AutoConfigURL #>
-            Get-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings" | Select-Object AutoConfigURL > "$Global:strUniqueLogFolder\AutoConfigURL.log"
-
-        }
-
-        <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: Machine certificates..." -PercentComplete (100/26 * 13)
-
-        <# Export machine certificates #>
-        certutil.exe -silent -store my > "$Global:strUniqueLogFolder\CertMachine.log"
-        
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export machine certificates" -strLogValue "CertMachine.log"
-
-        <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: User certificates..." -PercentComplete (100/26 * 14)
-
-        <# Export user certificates #>
-        certutil.exe -silent -user -store my > "$Global:strUniqueLogFolder\CertUser.log"
-        
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export user certificates" -strLogValue "CertUser.log"
-
-        <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: Credentials information..." -PercentComplete (100/26 * 15)
-
-        <# Export Credential Manager data #>
-        cmdkey.exe /list > "$Global:strUniqueLogFolder\CredMan.log"
-        
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Credential Manager" -strLogValue "CredMan.log"
-
-        <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: IP configuration..." -PercentComplete (100/26 * 16)
-
-        <# Export IP configuration #>
-        ipconfig.exe /all > "$Global:strUniqueLogFolder\IPConfigAll.log"
-        
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export ipconfig" -strLogValue "IPConfigAll.log"
-
-        <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: DNS..." -PercentComplete (100/26 * 17)
-
-        <# Export DNS configuration  #>
-        ipconfig.exe /displaydns > "$Global:strUniqueLogFolder\WinIPConfig.txt" | Out-Null
-        
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export DNS" -strLogValue "WinIPConfig.txt"
-
-        <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: Environment information..." -PercentComplete (100/26 * 18)
-
-        <# Export environment variables #>
-        Get-ChildItem Env: | Out-File "$Global:strUniqueLogFolder\EnvVar.log"
-        
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export environment variables" -strLogValue "EnvVar.log"
-
-        <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: Group policy report..." -PercentComplete (100/26 * 19)
-        
-        <# Export group policy #>
-        gpresult /f /h "$Global:strUniqueLogFolder\Gpresult.htm" | Out-Null
-        
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export group policy report" -strLogValue "Gpresult.htm"
-
-        <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: Time zone information..." -PercentComplete (100/26 * 20)
-
-        <# Export timezone offse #>
-        (Get-Timezone).BaseUTCOffset.Hours | Out-File "$Global:strUniqueLogFolder\BaseUTCOffset.log"
-        
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export timezone offset" -strLogValue "BaseUTCOffset.log"
-
-        <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: Tasklist..." -PercentComplete (100/26 * 21)
-
-        <# Export Tasklist #>
-        Tasklist.exe /svc > "$Global:strUniqueLogFolder\Tasklist.log"
-        
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Tasklist" -strLogValue "Tasklist.log"
-
-        <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: Programs and Features..." -PercentComplete (100/26 * 22)
-
-        <# Export Programs and Features (32) #>
-        If ($(Test-Path -Path "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall") -Eq $true) {
-
-            <# Programs32 #>
-            Get-ItemProperty "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | Export-Csv -Path "$Global:strUniqueLogFolder\Programs32.csv" -NoTypeInformation -Delimiter ";" -Encoding UTF8 -ErrorAction SilentlyContinue
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Programs (x86)" -strLogValue "Programs32.csv" 
-
-        }
-        
-        <# Export Programs and Features (64) #>
-        Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | Export-Csv -Path  "$Global:strUniqueLogFolder\Programs64.csv" -NoTypeInformation -Delimiter ";" -Encoding UTF8 -ErrorAction SilentlyContinue
-
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Programs (x64)" -strLogValue "Programs64.csv"
-
-        <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: Scheduled Tasks..." -PercentComplete (100/26 * 23)
-
-        <# Array to collect Scheduled Tasks data #>
-        [System.Collections.ArrayList]$Private:arrScheduledTasks = @()
-
-        <# Variable for task data #>
-        $Private:strAllTasks = Get-ScheduledTask
-
-        <# Looping trouth all Scheduled Tasks #>
-        ForEach ($Private:strTask in $Private:strAllTasks) {
-
-            <# Variable to collect task details #>
-            $Private:strTaskInfo = $Private:strTask | Get-ScheduledTaskInfo
-
-            <# Collecing data when NextRunTime is not empty #>
-            If ( -not ($Null -eq $Private:strTaskInfo.NextRunTime)){
-                $Private:arrScheduledTasks.Add([PSCustomObject]@{
-                    TaskName    = $Private:strTask.TaskName
-                    TaskPath    = $Private:strTask.TaskPath
-                    NextRunTime = $Private:strTaskInfo.NextRunTime
-                    State       = $Private:strTask.State}) | Out-Null
-            }
-
-        }
-
-        <# Export Scheduled Tasks #>
-        $Private:arrScheduledTasks | Sort-Object -Property 'NextRunTime' | Export-Csv -Path "$Global:strUniqueLogFolder\ScheduledTasks.csv" -NoTypeInformation -Delimiter ";" -Encoding UTF8
-
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Scheduled Tasks" -strLogValue "ScheduledTasks.csv"
-
-        <# Progress bar update #>
-        Write-Progress -Activity " Collecting logs: AIP registry keys..." -PercentComplete (100/26 * 24)
-        
-        <# Export AIP plugin Adobe Acrobat RMS logs #>
-        If ($(Test-Path -Path $env:LOCALAPPDATA\Microsoft\RMSLocalStorage\MIP\logs) -Eq $true) {
-
-            <# Progress bar update #>
-            Write-Progress -Activity " Collecting logs: Adobe logs..." -PercentComplete (100/26 * 25)
-
-            <# Export MSIP/MSIPC content to logs folder #>
-            fncCopyItem $env:LOCALAPPDATA\Microsoft\RMSLocalStorage\MIP\logs "$Global:strUniqueLogFolder\Adobe\LOCALAPPDATA" "Adobe\LOCALAPPDATA\*"
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Adobe logs" -strLogValue "\Adobe"
-
-        }
-
-        <# Export AIP plugin Adobe Acrobat RMS logs #>
-        If ($(Test-Path -Path $env:USERPROFILE\appdata\locallow\Microsoft\RMSLocalStorage\mip\logs) -Eq $true) {
-
-            <# Export MSIP/MSIPC content to logs folder #>
-            fncCopyItem $env:USERPROFILE\appdata\locallow\Microsoft\RMSLocalStorage\mip\logs "$Global:strUniqueLogFolder\Adobe\USERPROFILE" "Adobe\USERPROFILE\*"
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Adobe logs" -strLogValue "\Adobe"
-
-        }
-
-        <# Export several registry keys: Define an array and feeding it with related registry keys #>
-        $Private:arrRegistryKeys = "HKLM:\Software\Classes\MSIP.ExcelAddin", 
-                                "HKLM:\Software\Classes\MSIP.WordAddin",
-                                "HKLM:\SOFTWARE\Classes\MSIP.PowerPointAddin",
-                                "HKLM:\SOFTWARE\Classes\MSIP.OutlookAddin",
-                                "HKLM:\SOFTWARE\Classes\AllFileSystemObjects\shell\Microsoft.Azip.RightClick",
-                                "HKLM:\SOFTWARE\Microsoft\MSIPC",
-                                "HKLM:\SOFTWARE\Microsoft\Office\Word\Addins",
-                                "HKLM:\SOFTWARE\Microsoft\Office\Excel\Addins",
-                                "HKLM:\SOFTWARE\Microsoft\Office\PowerPoint\Addins",
-                                "HKLM:\SOFTWARE\Microsoft\Office\Outlook\Addins",
-                                "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\REGISTRY\MACHINE\SOFTWARE\Microsoft\Office\Word\Addins",
-                                "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\REGISTRY\MACHINE\SOFTWARE\Microsoft\Office\Excel\Addins",
-                                "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\REGISTRY\MACHINE\SOFTWARE\Microsoft\Office\PowerPoint\Addins",
-                                "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\REGISTRY\MACHINE\SOFTWARE\Microsoft\Office\Outlook\Addins",
-                                "HKLM:\SOFTWARE\WOW6432Node\Microsoft\MSIPC",
-                                "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Office\Word\Addins",
-                                "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Office\Excel\Addins",
-                                "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Office\PowerPoint\Addins",
-                                "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Office\Outlook\Addins",
-                                "HKCU:\SOFTWARE\Microsoft\MSIP",
-                                "HKCU:\Software\Microsoft\Office\16.0\Common\Identity",
-                                "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Internet",
-                                "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\DRM",
-                                "HKCU:\SOFTWARE\Microsoft\Office\Word\Addins",
-                                "HKCU:\SOFTWARE\Microsoft\Office\Excel\Addins",
-                                "HKCU:\SOFTWARE\Microsoft\Office\PowerPoint\Addins",
-                                "HKCU:\SOFTWARE\Microsoft\Office\Outlook\Addins",
-                                "HKCU:\SOFTWARE\Microsoft\Office\16.0\Word\Resiliency",
-                                "HKCU:\SOFTWARE\Microsoft\Office\16.0\Excel\Resiliency",
-                                "HKCU:\SOFTWARE\Microsoft\Office\16.0\PowerPoint\Resiliency",
-                                "HKCU:\SOFTWARE\Microsoft\Office\16.0\Outlook\Resiliency",
-                                "HKCU:\SOFTWARE\Classes\Local Settings\SOFTWARE\Microsoft\MSIPC",
-                                "HKCR:\MSIP.ExcelAddin",
-                                "HKCR:\MSIP.WordAddin",
-                                "HKCR:\MSIP.PowerPointAddin",
-                                "HKCR:\MSIP.OutlookAddin",
-                                "HKCR:\Local Settings\SOFTWARE\Microsoft\MSIPC",
-                                "HKCU:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\DRM",
-                                "HKCU:\SOFTWARE\Policies\Microsoft\Cloud\Office\16.0\Common\Security",
-                                "HKCU:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\Security",
-                                "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Security",
-                                "HKCU:\Software\Microsoft\Office\16.0\Common\Licensing\CurrentSkuIdAggregationForApp",
-                                "HKCU:\Software\Microsoft\Office\16.0\Common\Licensing\LastKnownC2RProductReleaseId"
-
-        <# Define variable for reg values #>
-        $Private:strRegValue
-
-        <# Loop though array and cache to a temp file #>
-        ForEach ($Private:strRegValue in $Private:arrRegistryKeys) {
-
-            If ($(Test-Path -Path $Private:strRegValue) -Eq $true) {
-
-                $Private:strTempFile = $Private:strTempFile + 1
-                & REG EXPORT $Private:strRegValue.Replace(":", $null) "$Global:strTempFolder\$Private:strTempFile.reg" /Y | Out-Null <# Remove the ":" to export (replace) #>
-
-            }
-
-        }
-
-        <# Releasing variable for reg values #>
-        $Private:strRegValue = $null
-
-        <# Insert first information; create log file #>
-        "Windows Registry Editor Version 5.00" | Set-Content "$Global:strUniqueLogFolder\Registry.log"
-
-        <# Read data from cached temp file, and add it to the logfile #>
-        (Get-Content "$Global:strTempFolder\*.reg" | Where-Object {$_ -ne "Windows Registry Editor Version 5.00"} | Add-Content "$Global:strUniqueLogFolder\Registry.log")
-
-        <# Clean temp folder of cached files #>
-        Remove-Item "$Global:strTempFolder\*.reg" -Force -ErrorAction SilentlyContinue | Out-Null
-
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export AIP registry keys" -strLogValue "Registry.log"
+        Get-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings" | Select-Object AutoConfigURL > "$Global:strUniqueLogFolder\AutoConfigURL.log"
 
     }
 
-    <# Detect macOS #>
-    If ($IsMacOS -eq $true) {
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: Machine certificates..." -PercentComplete (100/26 * 13)
 
-        <# Collecting system information #>
-        system_profiler -detaillevel basic *> "$Global:strUniqueLogFolder\SystemInformation.log"
+    <# Export machine certificates #>
+    certutil.exe -silent -store my > "$Global:strUniqueLogFolder\CertMachine.log"
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export machine certificates" -strLogValue "CertMachine.log"
+
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: User certificates..." -PercentComplete (100/26 * 14)
+
+    <# Export user certificates #>
+    certutil.exe -silent -user -store my > "$Global:strUniqueLogFolder\CertUser.log"
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export user certificates" -strLogValue "CertUser.log"
+
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: Credentials information..." -PercentComplete (100/26 * 15)
+
+    <# Export Credential Manager data #>
+    cmdkey.exe /list > "$Global:strUniqueLogFolder\CredMan.log"
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Credential Manager" -strLogValue "CredMan.log"
+
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: IP configuration..." -PercentComplete (100/26 * 16)
+
+    <# Export IP configuration #>
+    ipconfig.exe /all > "$Global:strUniqueLogFolder\IPConfigAll.log"
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export ipconfig" -strLogValue "IPConfigAll.log"
+
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: DNS..." -PercentComplete (100/26 * 17)
+
+    <# Export DNS configuration  #>
+    ipconfig.exe /displaydns > "$Global:strUniqueLogFolder\WinIPConfig.txt" | Out-Null
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export DNS" -strLogValue "WinIPConfig.txt"
+
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: Environment information..." -PercentComplete (100/26 * 18)
+
+    <# Export environment variables #>
+    Get-ChildItem Env: | Out-File "$Global:strUniqueLogFolder\EnvVar.log"
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export environment variables" -strLogValue "EnvVar.log"
+
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: Group policy report..." -PercentComplete (100/26 * 19)
+
+    <# Export group policies #>
+    gpresult /f /h "$Global:strUniqueLogFolder\Gpresult.htm" | Out-Null
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export group policy report" -strLogValue "Gpresult.htm"
+
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: Time zone information..." -PercentComplete (100/26 * 20)
+
+    <# Export timezone offse #>
+    (Get-Timezone).BaseUTCOffset.Hours | Out-File "$Global:strUniqueLogFolder\BaseUTCOffset.log"
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export timezone offset" -strLogValue "BaseUTCOffset.log"
+
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: Tasklist..." -PercentComplete (100/26 * 21)
+
+    <# Export Tasklist #>
+    Tasklist.exe /svc > "$Global:strUniqueLogFolder\Tasklist.log"
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Tasklist" -strLogValue "Tasklist.log"
+
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: Programs and Features..." -PercentComplete (100/26 * 22)
+
+    <# Export Programs and Features (32) #>
+    If ($(Test-Path -Path "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall") -Eq $true) {
+
+        <# Programs32 #>
+        Get-ItemProperty "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | Export-Csv -Path "$Global:strUniqueLogFolder\Programs32.csv" -NoTypeInformation -Delimiter ";" -Encoding UTF8 -ErrorAction SilentlyContinue
 
         <# Logging #>
-        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export system information" -strLogValue "SystemInformation.log"
-
-        <# Copy policy files #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.Word/Data/Library/Application Support/Microsoft/Office/CLP" "$Global:strUniqueLogFolder/Word" "$(printenv HOME)/Library/Containers/com.microsoft.Word/Data/Library/Application Support/Microsoft/Office/CLP/*" <# Word #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.Excel/Data/Library/Application Support/Microsoft/Office/CLP" "$Global:strUniqueLogFolder/Excel" "$(printenv HOME)/Library/Containers/com.microsoft.Excel/Data/Library/Application Support/Microsoft/Office/CLP/*" <# Excel #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.PowerPoint/Data/Library/Application Support/Microsoft/Office/CLP" "$Global:strUniqueLogFolder/PowerPoint" "$(printenv HOME)/Library/Containers/com.microsoft.PowerPoint/Data/Library/Application Support/Microsoft/Office/CLP/*" <# PowerPoint #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.Outlook/Data/Library/Application Support/Microsoft/Office/CLP" "$Global:strUniqueLogFolder/Outlook" "$(printenv HOME)/Library/Containers/com.microsoft.Outlook/Data/Library/Application Support/Microsoft/Office/CLP/*" <# Outlook #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.OneNote/Data/Library/Application Support/Microsoft/Office/CLP" "$Global:strUniqueLogFolder/OneNote" "$(printenv HOME)/Library/Containers/com.microsoft.OneNote/Data/Library/Application Support/Microsoft/Office/CLP/*" <# OneNote #>
-
-        <# Copy MIPSDK log files #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.Word/Data/Library/Application Support/Microsoft/MIPSDK/mip" "$Global:strUniqueLogFolder/Word" "$(printenv HOME)/Library/Containers/com.microsoft.Word/Data/Library/Application Support/Microsoft/MIPSDK/mip/*" <# Word #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.Excel/Data/Library/Application Support/Microsoft/MIPSDK/mip" "$Global:strUniqueLogFolder/Excel" "$(printenv HOME)/Library/Containers/com.microsoft.Excel/Data/Library/Application Support/Microsoft/MIPSDK/mip/*" <# Excel #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.PowerPoint/Data/Library/Application Support/Microsoft/MIPSDK/mip" "$Global:strUniqueLogFolder/PowerPoint" "$(printenv HOME)/Library/Containers/com.microsoft.PowerPoint/Data/Library/Application Support/Microsoft/MIPSDK/mip/*" <# PowerPoint #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.Outlook/Data/Library/Application Support/Microsoft/MIPSDK/mip" "$Global:strUniqueLogFolder/Outlook" "$(printenv HOME)/Library/Containers/com.microsoft.Outlook/Data/Library/Application Support/Microsoft/MIPSDK/mip/*" <# Outlook #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.OneNote/Data/Library/Application Support/Microsoft/MIPSDK/mip" "$Global:strUniqueLogFolder/OneNote" "$(printenv HOME)/Library/Containers/com.microsoft.OneNote/Data/Library/Application Support/Microsoft/MIPSDK/mip/*" <# OneNote #>
-
-        <# Copy log files #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.Word/Data/Library/Logs" "$Global:strUniqueLogFolder/Word/Logs" "$(printenv HOME)/Library/Containers/com.microsoft.Word/Data/Library/Logs/*" <# Word #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.Excel/Data/Library/Logs" "$Global:strUniqueLogFolder/Excel/Logs" "$(printenv HOME)/Library/Containers/com.microsoft.Excel/Data/Library/Logs/*" <# Excel #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.PowerPoint/Data/Library/Logs" "$Global:strUniqueLogFolder/PowerPoint/Logs" "$(printenv HOME)/Library/Containers/com.microsoft.PowerPoint/Data/Library/Logs/*" <# PowerPoint #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.Outlook/Data/Library/Logs" "$Global:strUniqueLogFolder/Outlook/Logs" "$(printenv HOME)/Library/Containers/com.microsoft.Outlook/Data/Library/Logs/*" <# Outlook #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.OneNote/Data/Library/Logs" "$Global:strUniqueLogFolder/OneNote/Logs" "$(printenv HOME)/Library/Containers/com.microsoft.OneNote/Data/Library/Logs/*" <# OneNote #>
-        
-        <# Copy RMS sharing app logs #>
-        fncCopyItem "$(printenv HOME)/Library/Containers/com.microsoft.protection.rms-sharing-mac/Data/Library/Logs" "$Global:strUniqueLogFolder/rms-sharing-mac/Logs" "$(printenv HOME)/Library/Containers/com.microsoft.protection.rms-sharing-mac/Data/Library/Logs/*"
-
-        <# Copy Office MIP SDK logs #>
-        fncCopyItem "$(printenv HOME)/Library/Group Containers/UBF8T346G9.Office/mip_policy/mip/logs" "$Global:strUniqueLogFolder/mip/Logs" "$(printenv HOME)/Library/Group Containers/UBF8T346G9.Office/mip_policy/mip/logs/*"
+        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Programs (x86)" -strLogValue "Programs32.csv"
 
     }
+
+    <# Export Programs and Features (64) #>
+    Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" | Select-Object DisplayName, DisplayVersion, Publisher, InstallDate | Export-Csv -Path  "$Global:strUniqueLogFolder\Programs64.csv" -NoTypeInformation -Delimiter ";" -Encoding UTF8 -ErrorAction SilentlyContinue
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Programs (x64)" -strLogValue "Programs64.csv"
+
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: Scheduled Tasks..." -PercentComplete (100/26 * 23)
+
+    <# Array to collect Scheduled Tasks data #>
+    [System.Collections.ArrayList]$Private:arrScheduledTasks = @()
+
+    <# Variable for task data #>
+    $Private:strAllTasks = Get-ScheduledTask
+
+    <# Looping trouth all Scheduled Tasks #>
+    ForEach ($Private:strTask in $Private:strAllTasks) {
+
+        <# Variable to collect task details #>
+        $Private:strTaskInfo = $Private:strTask | Get-ScheduledTaskInfo
+
+        <# Collecing data when NextRunTime is not empty #>
+        If ( -not ($Null -eq $Private:strTaskInfo.NextRunTime)){
+            $Private:arrScheduledTasks.Add([PSCustomObject]@{
+                TaskName    = $Private:strTask.TaskName
+                TaskPath    = $Private:strTask.TaskPath
+                NextRunTime = $Private:strTaskInfo.NextRunTime
+                State       = $Private:strTask.State}) | Out-Null
+        }
+
+    }
+
+    <# Export Scheduled Tasks #>
+    $Private:arrScheduledTasks | Sort-Object -Property 'NextRunTime' | Export-Csv -Path "$Global:strUniqueLogFolder\ScheduledTasks.csv" -NoTypeInformation -Delimiter ";" -Encoding UTF8
+
+    <# Logging #>
+     fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Scheduled Tasks" -strLogValue "ScheduledTasks.csv"
+
+    <# Progress bar update #>
+    Write-Progress -Activity " Collecting logs: AIP registry keys..." -PercentComplete (100/26 * 24)
+
+    <# Export AIP plugin Adobe Acrobat RMS logs #>
+    If ($(Test-Path -Path $env:LOCALAPPDATA\Microsoft\RMSLocalStorage\MIP\logs) -Eq $true) {
+
+        <# Progress bar update #>
+        Write-Progress -Activity " Collecting logs: Adobe logs..." -PercentComplete (100/26 * 25)
+
+        <# Export MSIP/MSIPC content to logs folder #>
+        fncCopyItem $env:LOCALAPPDATA\Microsoft\RMSLocalStorage\MIP\logs "$Global:strUniqueLogFolder\Adobe\LOCALAPPDATA" "Adobe\LOCALAPPDATA\*"
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Adobe logs" -strLogValue "\Adobe"
+
+    }
+
+    <# Export AIP plugin Adobe Acrobat RMS logs #>
+    If ($(Test-Path -Path $env:USERPROFILE\appdata\locallow\Microsoft\RMSLocalStorage\mip\logs) -Eq $true) {
+
+        <# Export MSIP/MSIPC content to logs folder #>
+        fncCopyItem $env:USERPROFILE\appdata\locallow\Microsoft\RMSLocalStorage\mip\logs "$Global:strUniqueLogFolder\Adobe\USERPROFILE" "Adobe\USERPROFILE\*"
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export Adobe logs" -strLogValue "\Adobe"
+
+    }
+
+    <# Export several registry keys: Define an array and feeding it with related registry keys #>
+    $Private:arrRegistryKeys = "HKLM:\Software\Classes\MSIP.ExcelAddin",
+                               "HKLM:\Software\Classes\MSIP.WordAddin",
+                               "HKLM:\SOFTWARE\Classes\MSIP.PowerPointAddin",
+                               "HKLM:\SOFTWARE\Classes\MSIP.OutlookAddin",
+                               "HKLM:\SOFTWARE\Classes\AllFileSystemObjects\shell\Microsoft.Azip.RightClick",
+                               "HKLM:\SOFTWARE\Microsoft\MSIPC",
+                               "HKLM:\SOFTWARE\Microsoft\Office\Word\Addins",
+                               "HKLM:\SOFTWARE\Microsoft\Office\Excel\Addins",
+                               "HKLM:\SOFTWARE\Microsoft\Office\PowerPoint\Addins",
+                               "HKLM:\SOFTWARE\Microsoft\Office\Outlook\Addins",
+                               "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\REGISTRY\MACHINE\SOFTWARE\Microsoft\Office\Word\Addins",
+                               "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\REGISTRY\MACHINE\SOFTWARE\Microsoft\Office\Excel\Addins",
+                               "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\REGISTRY\MACHINE\SOFTWARE\Microsoft\Office\PowerPoint\Addins",
+                               "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\REGISTRY\MACHINE\SOFTWARE\Microsoft\Office\Outlook\Addins",
+                               "HKLM:\SOFTWARE\WOW6432Node\Microsoft\MSIPC",
+                               "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Office\Word\Addins",
+                               "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Office\Excel\Addins",
+                               "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Office\PowerPoint\Addins",
+                               "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Office\Outlook\Addins",
+                               "HKLM:\SOFTWARE\Policies",
+                               "HKLM:\SOFTWARE\Microsoft\PolicyManager\AdmxDefault",
+                               "HKCU:\SOFTWARE\Microsoft\Policies",
+                               "HKCU:\SOFTWARE\Microsoft\MSIP",
+                               "HKCU:\Software\Microsoft\Office\16.0\Common\Identity",
+                               "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Internet",
+                               "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\DRM",
+                               "HKCU:\SOFTWARE\Microsoft\Office\Word\Addins",
+                               "HKCU:\SOFTWARE\Microsoft\Office\Excel\Addins",
+                               "HKCU:\SOFTWARE\Microsoft\Office\PowerPoint\Addins",
+                               "HKCU:\SOFTWARE\Microsoft\Office\Outlook\Addins",
+                               "HKCU:\SOFTWARE\Microsoft\Office\16.0\Word\Resiliency",
+                               "HKCU:\SOFTWARE\Microsoft\Office\16.0\Excel\Resiliency",
+                               "HKCU:\SOFTWARE\Microsoft\Office\16.0\PowerPoint\Resiliency",
+                               "HKCU:\SOFTWARE\Microsoft\Office\16.0\Outlook\Resiliency",
+                               "HKCU:\SOFTWARE\Classes\Local Settings\SOFTWARE\Microsoft\MSIPC",
+                               "HKCR:\MSIP.ExcelAddin",
+                               "HKCR:\MSIP.WordAddin",
+                               "HKCR:\MSIP.PowerPointAddin",
+                               "HKCR:\MSIP.OutlookAddin",
+                               "HKCR:\Local Settings\SOFTWARE\Microsoft\MSIPC",
+                               "HKCU:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\DRM",
+                               "HKCU:\SOFTWARE\Policies\Microsoft\Cloud\Office\16.0\Common\Security",
+                               "HKCU:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\Security",
+                               "HKCU:\SOFTWARE\Microsoft\Office\16.0\Common\Security",
+                               "HKCU:\Software\Microsoft\Office\16.0\Common\Licensing\CurrentSkuIdAggregationForApp",
+                               "HKCU:\Software\Microsoft\Office\16.0\Common\Licensing\LastKnownC2RProductReleaseId"
+
+    <# Define variable for reg values #>
+    $Private:strRegValue
+
+    <# Loop though array and cache to a temp file #>
+    ForEach ($Private:strRegValue in $Private:arrRegistryKeys) {
+
+        If ($(Test-Path -Path $Private:strRegValue) -Eq $true) {
+
+            $Private:strTempFile = $Private:strTempFile + 1
+            & REG EXPORT $Private:strRegValue.Replace(":", $null) "$Global:strTempFolder\$Private:strTempFile.reg" /Y | Out-Null <# Remove the ":" to export (replace) #>
+
+        }
+
+    }
+
+    <# Releasing variable for reg values #>
+    $Private:strRegValue = $null
+
+    <# Insert first information; create log file #>
+    "Windows Registry Editor Version 5.00" | Set-Content "$Global:strUniqueLogFolder\Registry.log"
+
+    <# Read data from cached temp file, and add it to the logfile #>
+    (Get-Content "$Global:strTempFolder\*.reg" | Where-Object {$_ -ne "Windows Registry Editor Version 5.00"} | Add-Content "$Global:strUniqueLogFolder\Registry.log")
+
+    <# Clean temp folder of cached files #>
+    Remove-Item "$Global:strTempFolder\*.reg" -Force -ErrorAction SilentlyContinue | Out-Null
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Export AIP registry keys" -strLogValue "Registry.log"
 
     <# Progress bar update #>
     Write-Progress -Activity " Logs collected" -Completed
 
     <# Logging #>
-    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Collecting logs" -strLogValue "Proceeded" 
+    fncLogging -strLogFunction "fncCollectingLogs" -strLogDescription "Collecting logs" -strLogValue "Proceeded"
 
 }
 
-<# Check for updates on PowerShellGallery.com #>
-Function fncUpdateRequiredModules {
+<# Verify that a module required by a collect operation is locally available #>
+Function fncTestRequiredModule {
 
-    <# Detect if powershellgallery.com is trusted repository #>
-    If (-not(Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+    <# Variables for checking module availability #>
+    Param (
+        [Parameter(Mandatory = $true)]
+        [string]$strModuleName
+    )
 
-        <# Logging #>
-        fncLogging -strLogFunction "fncUpdateRequiredModules" -strLogDescription "PSGallery trust" -strLogValue "Initiated"
-
-        <# Define powershellgallery.com as trusted; To install AIPService module #>
-        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue -WarningAction SilentlyContinue -Verbose:$false | Out-Null
-
-        <# Logging #>
-        fncLogging -strLogFunction "fncUpdateRequiredModules" -strLogDescription "PSGallery trust" -strLogValue "Proceeded"
-
+    <# Checking for module availability in cache, if not available, check locally and cache the result #>
+    If (-not $script:RequiredModuleAvailability.ContainsKey($strModuleName)) {
+        $script:RequiredModuleAvailability[$strModuleName] = [bool](Get-Module -ListAvailable -Name $strModuleName)
     }
 
-    <# Remember default progress bar status: "Continue" #>
-    $Private:strOriginalPreference = $Global:ProgressPreference 
-    $Global:ProgressPreference = "SilentlyContinue" <# Hiding progress bar #>
-
-    <# Validate connection to PowerShell Gallery by Find-Module on PowerShell Desktop (5.1). Not available on PowerShell Coore 7.x #>
-    If ($PSVersionTable.PSEdition.ToString() -eq "Desktop") {        
-
-        <# Actions if PowerShell Gallery can be reached #>
-        If (Find-PackageProvider -Name NuGet -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) {
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncUpdateRequiredModules" -strLogDescription "NuGet update" -strLogValue "Initiated"
-
-            <# Install/update nuGet provider #>
-            Install-PackageProvider -Name NuGet -MinimumVersion "2.8.5.208" -ForceBootstrap -Scope CurrentUser -ErrorAction SilentlyContinue -WarningAction SilentlyContinue -Verbose:$false | Out-Null
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncUpdateRequiredModules" -strLogDescription "NuGet version" -strLogValue (Find-PackageProvider -Verbose:$false -Name NuGet).Version
-            fncLogging -strLogFunction "fncUpdateRequiredModules" -strLogDescription "NuGet update" -strLogValue "Proceeded"
-
-        }
-        Else { <# Actions if PowerShell Gallery is unavailable #>
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncUpdateRequiredModules" -strLogDescription "NuGet update" -strLogValue "Failed"
-
-        }
-    }
-    Else {
-
-            <# Logging on PowerShell 7.1 (or higher) #>
-            fncLogging -strLogFunction "fncUpdateRequiredModules" -strLogDescription "NuGet update" -strLogValue "Not Applicable"
-
+    If ($script:RequiredModuleAvailability[$strModuleName]) {
+        Return $true
     }
 
-    <# Set back progress bar #>
-    $Global:ProgressPreference = $Private:strOriginalPreference
-
-    <# Validate connection to PowerShell Gallery #>
-    If (Get-Module -ListAvailable -Name "AIPService") {
-
-        <# Update AIPService if we can connect to PowerShell Gallery #>
-        If (Find-Module -Name AIPService -Repository PSGallery -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) {
-
-            <# Fill variables with version information #>
-            [Version]$Private:strAIPOnlineVersion = (Find-Module -Name AIPService -Repository PSGallery).Version
-            [Version]$Private:strAIPLocalVersion = (Get-Module -ListAvailable -Name "AIPService").Version | Select-Object -First 1
-
-            <# Compare local version vs. online version #>
-            If ([Version]::new($Private:strAIPOnlineVersion.Major, $Private:strAIPOnlineVersion.Minor, $Private:strAIPOnlineVersion.Build, $Private:strAIPOnlineVersion.Revision) -gt [Version]::new($Private:strAIPLocalVersion.Major, $Private:strAIPLocalVersion.Minor, $Private:strAIPLocalVersion.Build, $Private:strAIPLocalVersion.Revision) -eq $true) {
-
-                <# Logging #>
-                fncLogging -strLogFunction "fncUpdateRequiredModules" -strLogDescription "AIPService module update" -strLogValue "Initiated"
-
-                <# Output #>
-                Write-Output "Updating AIPService module, please wait..."
-
-                <# Update AIPService PowerShell module #>
-                Update-Module -Verbose:$false -Name AIPService -Force -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
-
-                <# Logging #>
-                fncLogging -strLogFunction "fncUpdateRequiredModules" -strLogDescription "AIPService module update" -strLogValue "Proceeded"
-
-            }
-
-            <# Release variables #>
-            [Version]$Private:strAIPOnlineVersion = $null
-            [Version]$Private:strAIPLocalVersion = $null
-
-        }
-        Else { <# Actions if PowerShell Gallery is not available #>
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncUpdateRequiredModules" -strLogDescription "AIPService module update" -strLogValue "Failed"
-
-        }
-
-    }
-
-    <# Actions if AIPService module isn't installed #>
-    If (-Not (Get-Module -ListAvailable -Name "AIPService")) {
-
-        <# Install AIPService if PowerShell Gallery is available #>
-        If (Find-Module -Name AIPService -Repository PSGallery -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) {
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncUpdateRequiredModules" -strLogDescription "AIPService module installation" -strLogValue "Initiated"
-
-            <# Output #>
-            Write-Output "Installing AIPService module, please wait..."
-
-            <# Install AIPService PowerShell module #>
-            Install-Module -Verbose:$false -Name AIPService -Repository PSGallery -Scope CurrentUser -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncUpdateRequiredModules" -strLogDescription "AIPService module installation" -strLogValue "Proceeded"
-
-            <# Output #>
-            Write-Output "AIPService module installed."
-            Write-ColoredOutput Red "ATTENTION: To use AIPService module, you must close this window and run a new instance of PowerShell for it to work.`nThe 'Compliance Utility' is now terminated."
-
-            <# Call Pause #>
-            fncPause
-    
-            <# Set back window title #>
-            $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
-
-            <# Exit #>
-            Break
-
-        }
-        Else { <# Actions if PowerShell Gallery is not available #>
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncUpdateRequiredModules" -strLogDescription "AIPService module installation" -strLogValue "Failed"
-
-        }
-
-    }
+    <# Output #>
+    Write-ColoredOutput Red "ATTENTION: The required PowerShell module '$strModuleName' is not installed.`nRun 'ComplianceUtility -UpdateModules' to install missing modules, then try again.`n"
 
     <# Logging #>
-    fncLogging -strLogFunction "fncUpdateRequiredModules" -strLogDescription "AIPService version" -strLogValue (Get-Module -Verbose:$false -ListAvailable -Name AIPService).Version
+    fncLogging -strLogFunction "fncTestRequiredModule" -strLogDescription "$strModuleName module" -strLogValue "Not installed"
 
+    Return $false
+}
+
+Function fncUpdateModules {
+
+    <# Variables for checking module availability #>
+    $Private:RequiredModules = @("AIPService", "ExchangeOnlineManagement", "Microsoft.Graph")
+    $Private:UpdateSucceeded = $false
+    $Private:ModulesChanged = $false
+
+    <# Output #>
+    Write-Output "CHECK AND UPDATE REQUIRED MODULES:"
+    Write-Output "Initializing, please wait..."
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncUpdateModules" -strLogDescription "UPDATE MODULES" -strLogValue "Initiated"
+
+    <# Try and check for required modules, install missing and update outdated modules #>
+    Try {
+
+        If (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+
+            Register-PSRepository -Default -ErrorAction Stop
+
+        }
+
+        If ($PSVersionTable.PSEdition -eq "Desktop") {
+
+            $Private:NuGetProvider = Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue
+
+            If (-not $Private:NuGetProvider -or $Private:NuGetProvider.Version -lt [Version]"2.8.5.208") {
+
+                <# Output #>
+                Write-Output "Installing the NuGet package provider, please wait..."
+                
+                Install-PackageProvider -Name NuGet -MinimumVersion "2.8.5.208" -ForceBootstrap -Scope CurrentUser -ErrorAction Stop | Out-Null
+                $Private:ModulesChanged = $true
+
+            }
+        }
+
+        ForEach ($Private:ModuleName in $Private:RequiredModules) {
+
+            $Private:LocalModule = Get-Module -ListAvailable -Name $Private:ModuleName | Sort-Object Version -Descending | Select-Object -First 1
+
+            <# Query PowerShell Gallery exactly once for each module #>
+            $Private:OnlineModule = Find-Module -Name $Private:ModuleName -Repository PSGallery -ErrorAction Stop
+
+            If (-not $Private:LocalModule) {
+
+                <# Output #>
+                Write-Output "Installing $Private:ModuleName $($Private:OnlineModule.Version), please wait..."
+
+                Install-Module -Name $Private:ModuleName -Repository PSGallery -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+                $script:RequiredModuleAvailability[$Private:ModuleName] = $true
+                $Private:ModulesChanged = $true
+
+                <# Logging #>
+                fncLogging -strLogFunction "fncUpdateModules" -strLogDescription "$Private:ModuleName module" -strLogValue "Installed: $($Private:OnlineModule.Version)"
+
+            }
+            ElseIf ($Private:OnlineModule.Version -gt $Private:LocalModule.Version) {
+
+                <# Output #>
+                Write-Output "Updating $Private:ModuleName from $($Private:LocalModule.Version) to $($Private:OnlineModule.Version), please wait..."
+
+                Update-Module -Name $Private:ModuleName -Force -ErrorAction Stop
+                $Private:ModulesChanged = $true
+
+                <# Logging #>
+                fncLogging -strLogFunction "fncUpdateModules" -strLogDescription "$Private:ModuleName module" -strLogValue "Updated: $($Private:LocalModule.Version) -> $($Private:OnlineModule.Version)"
+
+            }
+            Else {
+
+                <# Output #>
+                Write-ColoredOutput Yellow "$Private:ModuleName is up to date: $($Private:LocalModule.Version)"
+
+                <# Logging #>
+                fncLogging -strLogFunction "fncUpdateModules" -strLogDescription "$Private:ModuleName module" -strLogValue "Current: $($Private:LocalModule.Version)"
+
+            }
+        }
+
+        <# Output #>
+        Write-Output "`nAll required modules have been checked."
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncUpdateModules" -strLogDescription "UPDATE MODULES" -strLogValue "Proceeded"
+
+        $Private:UpdateSucceeded = $true
+
+    }
+    Catch {
+
+        $Private:UpdateError = $_.Exception.ToString()
+
+        <# Output #>
+        Write-ColoredOutput Red "ATTENTION: Required modules could not be updated.`n$Private:UpdateError`n"
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncUpdateModules" -strLogDescription "UPDATE MODULES" -strLogValue "Failed: $Private:UpdateError"
+
+    }
+
+    If ($Private:UpdateSucceeded -and $Private:ModulesChanged) {
+
+        $Private:PowerShellExecutable = Join-Path -Path $PSHOME -ChildPath $(If ($PSVersionTable.PSEdition -eq "Core") { "pwsh.exe" } Else { "powershell.exe" })
+        $Private:ModulePath = Join-Path -Path $PSScriptRoot -ChildPath "ComplianceUtility.psm1"
+        $Private:RestartCommand = "`$Host.UI.RawUI.BackgroundColor = 'Black'; Clear-Host; Import-Module -Name '$Private:ModulePath' -Force; ComplianceUtility -Menu"
+
+        <# Output #>
+        Write-Output "The required modules have been installed or updated."
+        Write-ColoredOutput Yellow "The Compliance Utility will now be restarted."
+        fncPause
+
+        $Private:RestartParameters = @{
+            FilePath = $Private:PowerShellExecutable
+            ArgumentList = @("-NoExit", "-Command", $Private:RestartCommand)
+        }
+
+        If ($Global:bolRunningPrivileged -eq $true) {
+            $Private:RestartParameters.Verb = "RunAs"
+        }
+
+        Start-Process @Private:RestartParameters | Out-Null
+
+        <# Close the current session after starting the updated session #>
+        Exit
+
+    }
+    ElseIf ($Private:UpdateSucceeded) {
+
+        <# Output #>
+        Write-ColoredOutput Green "All required modules are already installed and up to date.`n"
+
+    }
 }
 
 Function fncCollectAIPServiceConfiguration {
@@ -2722,13 +2429,13 @@ Function fncCollectAIPServiceConfiguration {
     Write-Output "COLLECT AIP SERVICE CONFIGURATION:"
 
     <# Check if not running as administrator #>
-    If ($Global:bolRunningPrivileged -eq $false) {
+    If ($Global:bolRunningPrivileged -ne $true) {
 
         <# Output #>
-        Write-ColoredOutput Red "ATTENTION: You must run the 'Compliance Utility' in an administrative PowerShell window as a user with local administrative privileges to continue with this option.`nCOLLECT AIP SERVICE CONFIGURATION: Failed.`n"
+        Write-ColoredOutput Red "ATTENTION: You must run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges to continue with this option.`nCOLLECT AIP SERVICE CONFIGURATION: Failed.`n"
 
         <# Command line actions #>
-        If ($Global:bolCommingFromMenu -eq $false) {
+        If ($Global:bolComingFromMenu -eq $false) {
 
             <# Set back window title #>
             $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
@@ -2737,12 +2444,12 @@ Function fncCollectAIPServiceConfiguration {
             $Global:bolSkipRequiredUpdates = $false
 
             <# Exit #>
-            Break
+            Return
 
         }
 
         <# ShowMenu actions #>
-        If ($Global:bolCommingFromMenu -eq $true) {
+        If ($Global:bolComingFromMenu -eq $true) {
 
             <# Call Pause #>
             fncPause
@@ -2751,31 +2458,24 @@ Function fncCollectAIPServiceConfiguration {
             Clear-Host
 
             <# Call ShowMenu #>
-            fncShowMenu    
+            fncShowMenu
+
+            Return
 
         }
 
     }
 
-    <# Output #>
-    Write-Output "Initializing, please wait..."
-
     <# Logging #>
     fncLogging -strLogFunction "fncCollectAIPServiceConfiguration" -strLogDescription "COLLECT AIP SERVICE CONFIGURATION" -strLogValue "Initiated"
 
-    <# Action if SkipUpdates was called from command line #>
-    If ($Global:bolSkipRequiredUpdates -eq $false) {
-
-        <# Call function to check and update needed modules #>
-        fncUpdateRequiredModules
-
-    }
+    If (-not (fncTestRequiredModule -strModuleName "AIPService")) { Return }
 
     <# Output #>
     Write-Output "Connecting to AIPService..."
 
     <# Actions on PowerShell Core (7.x) for compatibility mode #>
-    If ($PSVersionTable.PSEdition.ToString() -eq "Core") {        
+    If ($PSVersionTable.PSEdition.ToString() -eq "Core") {
 
         <# Remove AIPService module, because it's not yet compatible with PowerShell Core (7.x) #>
         Remove-Module -Name AIPService -Verbose:$false -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
@@ -2788,27 +2488,37 @@ Function fncCollectAIPServiceConfiguration {
 
     }
 
-    <# Connect/logon to AIPService #>
-    If (Connect-AIPService -Verbose:$false -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) { <# Action if AIPService connection was opened #>
+    If (-not (Get-Command -Name Connect-AIPService -ErrorAction SilentlyContinue)) {
+        Write-ColoredOutput Red "ATTENTION: The required cmdlet 'Connect-AIPService' is not available.`nRun 'ComplianceUtility -UpdateModules' to install or update the required module, then restart the Compliance Utility.`n"
+        fncLogging -strLogFunction "fncCollectAIPServiceConfiguration" -strLogDescription "AIPService module" -strLogValue "Connect-AIPService unavailable"
+        Return
+    }
 
-        <# Output #> 
+    Try {
+
+        <# Connect/logon to AIPService #>
+        Connect-AIPService -Verbose:$false -ErrorAction Stop -WarningAction SilentlyContinue | Out-Null
+
+        <# Output #>
         Write-Output "AIPService connected."
 
         <# Logging #>
         fncLogging -strLogFunction "fncCollectAIPServiceConfiguration" -strLogDescription "AIPService connected" -strLogValue $true
 
     }
-    Else{ <# Action if AIPService connection failed #>
+    Catch { <# Action if AIPService connection failed #>
+
+        $Private:strAIPServiceConnectionError = $_.Exception.Message
 
         <# Logging #>
-        fncLogging -strLogFunction "fncCollectAIPServiceConfiguration" -strLogDescription "AIPService connected" -strLogValue $false 
-        fncLogging -strLogFunction "fncCollectAIPServiceConfiguration" -strLogDescription "COLLECT AIP SERVICE CONFIGURATION" -strLogValue "Login failed"
-    
+        fncLogging -strLogFunction "fncCollectAIPServiceConfiguration" -strLogDescription "AIPService connected" -strLogValue $false
+        fncLogging -strLogFunction "fncCollectAIPServiceConfiguration" -strLogDescription "COLLECT AIP SERVICE CONFIGURATION" -strLogValue "Login failed: $Private:strAIPServiceConnectionError"
+
         <# Output #>
-        Write-ColoredOutput Red "COLLECT AIP SERVICE CONFIGURATION: Login failed. Please try again.`n"
+        Write-ColoredOutput Red "COLLECT AIP SERVICE CONFIGURATION: Login failed: $Private:strAIPServiceConnectionError`n"
 
         <# Action if function was called from command line #>
-        If ($Global:bolCommingFromMenu -eq $false) {
+        If ($Global:bolComingFromMenu -eq $false) {
 
             <# Set back window title to default #>
             $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
@@ -2817,23 +2527,12 @@ Function fncCollectAIPServiceConfiguration {
             $Global:bolSkipRequiredUpdates = $false
 
             <# Exit #>
-            Break
+            Return
 
         }
 
-        <# Action if function was called from the menu #>
-        If ($Global:bolCommingFromMenu -eq $true) {
-
-            <# Call Pause #>
-            fncPause
-
-            <# Clear console #>
-            Clear-Host
-
-            <# Call ShowMenu #>
-            fncShowMenu    
-
-        }
+        $Private:strAIPServiceConnectionError = $null
+        Return
 
     }
 
@@ -2852,201 +2551,107 @@ Function fncCollectAIPServiceConfiguration {
 
     }
 
-    <# Output #> 
+    <# Output #>
     Write-Output "Collecting AIP service configuration, please wait..."
 
     <# Check for existing AIPService logging file, and extend it if it exist #>
     If ($(Test-Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log") -Eq $true) { <# Exporting AIP service configuration and output result: #>
-            
+
         <# Timestamp #>
         $Private:Timestamp = (Get-Date -Verbose:$false -UFormat "%y%m%d-%H%M%S") <# Filling private variable #>
         Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("Date/Timestamp                            : " + $Private:Timestamp) <# Extend log file #>
         Write-ColoredOutput Yellow "Date/Timestamp                            : $Private:Timestamp" <# Output #>
         $Private:Timestamp = $null <# Releasing variable #>
-            
+
         <# AIPService Module version #>
         $Private:AIPServiceModule = (Get-Module -Verbose:$false -ListAvailable -Name AIPService).Version <# Filling private variable #>
         Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("Module version                            : $Private:AIPServiceModule") <# Extend log file #>
         Write-ColoredOutput Yellow "Module version                            : $Private:AIPServiceModule" <# Output #>
         $Private:AIPServiceModule = $null <# Releasing variable #>
 
-        <# BPOSId #>
-        $Private:BPOSId = (Get-AipServiceConfiguration).BPOSId <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("BPOSId                                    : $Private:BPOSId") <# Extend log file #>
-        Write-ColoredOutput Yellow "BPOSId                                    : $Private:BPOSId" <# Output #>
-        $Private:BPOSId = $null <# Releasing variable #>
-
-        <# RightsManagementServiceId #>
-        $Private:RightsManagementServiceId = (Get-AipServiceConfiguration).RightsManagementServiceId <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("RightsManagementServiceId                 : $Private:RightsManagementServiceId") <# Extend log file #>
-        Write-ColoredOutput Yellow "RightsManagementServiceId                 : $Private:RightsManagementServiceId" <# Output #>
-        $Private:RightsManagementServiceId = $null <# Releasing variable #>
-
-        <# LicensingIntranetDistributionPointUrl #>
-        $Private:LicensingIntranetDistributionPointUrl = ($Private:AIPServiceModule).LicensingIntranetDistributionPointUrl <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("LicensingIntranetDistributionPointUrl     : $Private:LicensingIntranetDistributionPointUrl") <# Extend log file #>
-        Write-ColoredOutput Yellow "LicensingIntranetDistributionPointUrl     : $Private:LicensingIntranetDistributionPointUrl" <# Output #>
-        $Private:LicensingIntranetDistributionPointUrl = $null <# Releasing variable #>
-
-        <# LicensingExtranetDistributionPointUrl #>
-        $Private:LicensingExtranetDistributionPointUrl = (Get-AipServiceConfiguration).LicensingExtranetDistributionPointUrl <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("LicensingExtranetDistributionPointUrl     : $Private:LicensingExtranetDistributionPointUrl") <# Extend log file #>
-        Write-ColoredOutput Yellow "LicensingExtranetDistributionPointUrl     : $Private:LicensingExtranetDistributionPointUrl" <# Output #>
-        $Private:LicensingExtranetDistributionPointUrl = $null <# Releasing variable #>
-
-        <# CertificationIntranetDistributionPointUrl #>
-        $Private:CertificationIntranetDistributionPointUrl = (Get-AipServiceConfiguration).CertificationIntranetDistributionPointUrl <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("CertificationIntranetDistributionPointUrl : $Private:CertificationIntranetDistributionPointUrl") <# Extend log file #>
-        Write-ColoredOutput Yellow "CertificationIntranetDistributionPointUrl : $Private:CertificationIntranetDistributionPointUrl" <# Output #>
-        $Private:CertificationIntranetDistributionPointUrl = $null <# Releasing variable #>
-
-        <# CertificationExtranetDistributionPointUrl #>
-        $Private:CertificationExtranetDistributionPointUrl = (Get-AipServiceConfiguration).CertificationExtranetDistributionPointUrl <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("CertificationExtranetDistributionPointUrl : $Private:CertificationExtranetDistributionPointUrl") <# Extend log file #>
-        Write-ColoredOutput Yellow "CertificationExtranetDistributionPointUrl : $Private:CertificationExtranetDistributionPointUrl" <# Output #>
-        $Private:CertificationExtranetDistributionPointUrl = $null <# Releasing variable #>
-
-        <# AdminConnectionUrl #>
-        $Private:AdminConnectionUrl = (Get-AipServiceConfiguration).AdminConnectionUrl <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AdminConnectionUrl                        : $Private:AdminConnectionUrl") <# Extend log file #>
-        Write-ColoredOutput Yellow "AdminConnectionUrl                        : $Private:AdminConnectionUrl" <# Output #>
-        $Private:AdminConnectionUrl = $null <# Releasing variable #>
-
-        <# AdminV2ConnectionUrl #>
-        $Private:AdminV2ConnectionUrl = (Get-AipServiceConfiguration).AdminV2ConnectionUrl <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AdminV2ConnectionUrl                      : $Private:AdminV2ConnectionUrl") <# Extend log file #>
-        Write-ColoredOutput Yellow "AdminV2ConnectionUrl                      : $Private:AdminV2ConnectionUrl" <# Output #> 
-        $Private:AdminV2ConnectionUrl = $null <# Releasing variable #>
-
-        <# OnPremiseDomainName #>
-        $Private:OnPremiseDomainName = (Get-AipServiceConfiguration).OnPremiseDomainName <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("OnPremiseDomainName                       : $Private:OnPremiseDomainName") <# Extend log file #>
-        Write-ColoredOutput Yellow "OnPremiseDomainName                       : $Private:OnPremiseDomainName" <# Output #>
-        $Private:OnPremiseDomainName = $null <# Releasing variable #>
-
-        <# Keys #>
-        $Private:Keys = (Get-AipServiceConfiguration).Keys <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("Keys                                      : $Private:Keys") <# Extend log file #>
-        Write-ColoredOutput Yellow "Keys                                      : $Private:Keys" <# Output #>
-        $Private:Keys = $null <# Releasing variable #>
-
-        <# CurrentLicensorCertificateGuid #>
-        $Private:CurrentLicensorCertificateGuid = (Get-AipServiceConfiguration).CurrentLicensorCertificateGuid <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("CurrentLicensorCertificateGuid            : $Private:CurrentLicensorCertificateGuid") <# Extend log file #>
-        Write-ColoredOutput Yellow "CurrentLicensorCertificateGuid            : $Private:CurrentLicensorCertificateGuid" <# Output #>
-        $Private:CurrentLicensorCertificateGuid = $null <# Releasing variable #>
-
-        <# Templates #>
-        $Private:Templates = (Get-AipServiceConfiguration).Templates <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("Template IDs                              : $Private:Templates") <# Extend log file #>
-        Write-ColoredOutput Yellow "Template IDs                              : $Private:Templates" <# Output #>
-        $Private:Templates = $null <# Releasing variable #>
-
-        <# FunctionalState #>
-        $Private:FunctionalState = (Get-AipServiceConfiguration).FunctionalState <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("FunctionalState                           : $Private:FunctionalState") <# Extend log file #>
-        Write-ColoredOutput Yellow "FunctionalState                           : $Private:FunctionalState" <# Output #>
-        $Private:FunctionalState = $null <# Releasing variable #>
-
-        <# SuperUsersEnabled #>
-        $Private:SuperUsersEnabled = (Get-AipServiceConfiguration).SuperUsersEnabled <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("SuperUsersEnabled                         : $Private:SuperUsersEnabled") <# Extend log file #>
-        Write-ColoredOutput Yellow "SuperUsersEnabled                         : $Private:SuperUsersEnabled" <# Output #>
-        $Private:SuperUsersEnabled = $null <# Releasing variable #>
-
-        <# SuperUsers #>
-        $Private:SuperUsers = (Get-AipServiceConfiguration).SuperUsers <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("SuperUsers                                : $Private:SuperUsers") <# Extend log file #>
-        Write-ColoredOutput Yellow "SuperUsers                                : $Private:SuperUsers" <# Output #>
-        $Private:SuperUsers = $null <# Releasing variable #>
-
-        <# AdminRoleMembers #>
-        $Private:AdminRoleMembers = (Get-AipServiceConfiguration).AdminRoleMembers <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AdminRoleMembers                          : $Private:AdminRoleMembers") <# Extend log file #>
-        Write-ColoredOutput Yellow "AdminRoleMembers                          : $Private:AdminRoleMembers" <# Output #>
-        $Private:AdminRoleMembers = $null <# Releasing variable #>
-
-        <# KeyRolloverCount #>
-        $Private:KeyRolloverCount = (Get-AipServiceConfiguration).KeyRolloverCount <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("KeyRolloverCount                          : $Private:KeyRolloverCount") <# Extend log file #>
-        Write-ColoredOutput Yellow "KeyRolloverCount                          : $Private:KeyRolloverCount" <# Output #>
-        $Private:KeyRolloverCount = $null <# Releasing variable #>
-
-        <# ProvisioningDate #>
-        $Private:ProvisioningDate = (Get-AipServiceConfiguration).ProvisioningDate <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("ProvisioningDate                          : $Private:ProvisioningDate") <# Extend log file #>
-        Write-ColoredOutput Yellow "ProvisioningDate                          : $Private:ProvisioningDate" <# Output #>
-        $Private:ProvisioningDate = $null <# Releasing variable #>
-
-        <# IPCv3ServiceFunctionalState #>
-        $Private:IPCv3ServiceFunctionalState = (Get-AipServiceConfiguration).IPCv3ServiceFunctionalState <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("IPCv3ServiceFunctionalState               : $Private:IPCv3ServiceFunctionalState") <# Extend log file #>
-        Write-ColoredOutput Yellow "IPCv3ServiceFunctionalState               : $Private:IPCv3ServiceFunctionalState" <# Output #>
-        $Private:IPCv3ServiceFunctionalState = $null <# Releasing variable #>
-
-        <# DevicePlatformState #>
-        $Private:DevicePlatformState = (Get-AipServiceConfiguration).DevicePlatformState <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("DevicePlatformState                       : $Private:DevicePlatformState") <# Extend log file #>
-        Write-ColoredOutput Yellow "DevicePlatformState                       : $Private:DevicePlatformState" <# Output #> 
-        $Private:DevicePlatformState = $null <# Releasing variable #>
-
-        <# FciEnabledForConnectorAuthorization #>
-        $Private:FciEnabledForConnectorAuthorization = (Get-AipServiceConfiguration).FciEnabledForConnectorAuthorization <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("FciEnabledForConnectorAuthorization       : $Private:FciEnabledForConnectorAuthorization") <# Extend log file #>
-        Write-ColoredOutput Yellow "FciEnabledForConnectorAuthorization       : $Private:FciEnabledForConnectorAuthorization" <# Output #>
-        $Private:FciEnabledForConnectorAuthorization = $null <# Releasing variable #>
+        <# Retrieve the AIP service configuration once and write its values directly to the log #>
+        Get-AipServiceConfiguration | ForEach-Object {
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("BPOSId                                    : " + $_.BPOSId)
+            Write-ColoredOutput Yellow ("BPOSId                                    : " + $_.BPOSId)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("RightsManagementServiceId                 : " + $_.RightsManagementServiceId)
+            Write-ColoredOutput Yellow ("RightsManagementServiceId                 : " + $_.RightsManagementServiceId)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("LicensingIntranetDistributionPointUrl     : " + $_.LicensingIntranetDistributionPointUrl)
+            Write-ColoredOutput Yellow ("LicensingIntranetDistributionPointUrl     : " + $_.LicensingIntranetDistributionPointUrl)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("LicensingExtranetDistributionPointUrl     : " + $_.LicensingExtranetDistributionPointUrl)
+            Write-ColoredOutput Yellow ("LicensingExtranetDistributionPointUrl     : " + $_.LicensingExtranetDistributionPointUrl)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("CertificationIntranetDistributionPointUrl : " + $_.CertificationIntranetDistributionPointUrl)
+            Write-ColoredOutput Yellow ("CertificationIntranetDistributionPointUrl : " + $_.CertificationIntranetDistributionPointUrl)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("CertificationExtranetDistributionPointUrl : " + $_.CertificationExtranetDistributionPointUrl)
+            Write-ColoredOutput Yellow ("CertificationExtranetDistributionPointUrl : " + $_.CertificationExtranetDistributionPointUrl)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AdminConnectionUrl                        : " + $_.AdminConnectionUrl)
+            Write-ColoredOutput Yellow ("AdminConnectionUrl                        : " + $_.AdminConnectionUrl)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AdminV2ConnectionUrl                      : " + $_.AdminV2ConnectionUrl)
+            Write-ColoredOutput Yellow ("AdminV2ConnectionUrl                      : " + $_.AdminV2ConnectionUrl)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("OnPremiseDomainName                       : " + $_.OnPremiseDomainName)
+            Write-ColoredOutput Yellow ("OnPremiseDomainName                       : " + $_.OnPremiseDomainName)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("Keys                                      : " + $_.Keys)
+            Write-ColoredOutput Yellow ("Keys                                      : " + $_.Keys)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("CurrentLicensorCertificateGuid            : " + $_.CurrentLicensorCertificateGuid)
+            Write-ColoredOutput Yellow ("CurrentLicensorCertificateGuid            : " + $_.CurrentLicensorCertificateGuid)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("Template IDs                              : " + $_.Templates)
+            Write-ColoredOutput Yellow ("Template IDs                              : " + $_.Templates)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("FunctionalState                           : " + $_.FunctionalState)
+            Write-ColoredOutput Yellow ("FunctionalState                           : " + $_.FunctionalState)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("SuperUsersEnabled                         : " + $_.SuperUsersEnabled)
+            Write-ColoredOutput Yellow ("SuperUsersEnabled                         : " + $_.SuperUsersEnabled)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("SuperUsers                                : " + $_.SuperUsers)
+            Write-ColoredOutput Yellow ("SuperUsers                                : " + $_.SuperUsers)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AdminRoleMembers                          : " + $_.AdminRoleMembers)
+            Write-ColoredOutput Yellow ("AdminRoleMembers                          : " + $_.AdminRoleMembers)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("KeyRolloverCount                          : " + $_.KeyRolloverCount)
+            Write-ColoredOutput Yellow ("KeyRolloverCount                          : " + $_.KeyRolloverCount)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("ProvisioningDate                          : " + $_.ProvisioningDate)
+            Write-ColoredOutput Yellow ("ProvisioningDate                          : " + $_.ProvisioningDate)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("IPCv3ServiceFunctionalState               : " + $_.IPCv3ServiceFunctionalState)
+            Write-ColoredOutput Yellow ("IPCv3ServiceFunctionalState               : " + $_.IPCv3ServiceFunctionalState)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("DevicePlatformState                       : " + $_.DevicePlatformState)
+            Write-ColoredOutput Yellow ("DevicePlatformState                       : " + $_.DevicePlatformState)
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("FciEnabledForConnectorAuthorization       : " + $_.FciEnabledForConnectorAuthorization)
+            Write-ColoredOutput Yellow ("FciEnabledForConnectorAuthorization       : " + $_.FciEnabledForConnectorAuthorization)
+        }
 
         <# AipServiceDocumentTrackingFeature #>
-        $Private:AipServiceDocumentTrackingFeature = Get-AipServiceDocumentTrackingFeature <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AipServiceDocumentTrackingFeature         : $Private:AipServiceDocumentTrackingFeature") <# Extend log file #>
-        Write-ColoredOutput Yellow "AipServiceDocumentTrackingFeature         : $Private:AipServiceDocumentTrackingFeature" <# Output #>
-        $Private:AipServiceDocumentTrackingFeature = $null <# Releasing variable #>
+        Get-AipServiceDocumentTrackingFeature | ForEach-Object {
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AipServiceDocumentTrackingFeature         : " + $_)
+            Write-ColoredOutput Yellow ("AipServiceDocumentTrackingFeature         : " + $_)
+        }
 
         <# AipServiceOnboardingControlPolicy #>
-        $Private:AipServiceOnboardingControlPolicy = ("{[UseRmsUserLicense, " + $(Get-AipServiceOnboardingControlPolicy).UseRmsUserLicense +"], [SecurityGroupObjectId, " + $(Get-AipServiceOnboardingControlPolicy).SecurityGroupObjectId + "], [Scope, " + $(Get-AipServiceOnboardingControlPolicy).Scope + "]}") <# Filling private variable #>
-        Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AipServiceOnboardingControlPolicy         : $Private:AipServiceOnboardingControlPolicy") <# Extend log file #>
-        Write-ColoredOutput Yellow "AipServiceOnboardingControlPolicy         : $Private:AipServiceOnboardingControlPolicy" <# Output #>
-        $Private:AipServiceOnboardingControlPolicy = $null <# Releasing variable #>
+        Get-AipServiceOnboardingControlPolicy | ForEach-Object {
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AipServiceOnboardingControlPolicy         : {[UseRmsUserLicense, " + $_.UseRmsUserLicense + "], [SecurityGroupObjectId, " + $_.SecurityGroupObjectId + "], [Scope, " + $_.Scope + "]}")
+            Write-ColoredOutput Yellow ("AipServiceOnboardingControlPolicy         : {[UseRmsUserLicense, " + $_.UseRmsUserLicense + "], [SecurityGroupObjectId, " + $_.SecurityGroupObjectId + "], [Scope, " + $_.Scope + "]}")
+        }
 
         <# AipServiceDoNotTrackUserGroup #>
-        $Private:AipServiceDoNotTrackUserGroup = Get-AipServiceDoNotTrackUserGroup <# Filling private variable #>
-
-        <# Actions if AipServiceDoNotTrackUserGroup variable value is not empty #>
-        If ($Private:AipServiceDoNotTrackUserGroup) {
-
-            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AipServiceDoNotTrackUserGroup             : $Private:AipServiceDoNotTrackUserGroup") <# Extend log file #>
-            Write-ColoredOutput Yellow "AipServiceDoNotTrackUserGroup             : $Private:AipServiceDoNotTrackUserGroup" <# Output #>
-
+        $AipServiceDoNotTrackUserGroups = @(Get-AipServiceDoNotTrackUserGroup)
+        If ($AipServiceDoNotTrackUserGroups.Count -eq 0) {
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value "AipServiceDoNotTrackUserGroup             :"
+            Write-ColoredOutput Yellow "AipServiceDoNotTrackUserGroup             :"
         }
-        Else { <# Actions if variable value is empty #>
-            
-            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AipServiceDoNotTrackUserGroup             :") <# Extend log file #>
-            Write-ColoredOutput Yellow "AipServiceDoNotTrackUserGroup             :" <# Output #>
-
+        Else {
+            $AipServiceDoNotTrackUserGroups | ForEach-Object {
+                Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AipServiceDoNotTrackUserGroup             : " + $_)
+                Write-ColoredOutput Yellow ("AipServiceDoNotTrackUserGroup             : " + $_)
+            }
         }
-            
-        <# Release AipServiceDoNotTrackUserGroup variable #>
-        $Private:AipServiceDoNotTrackUserGroup = $null 
 
         <# AipServiceRoleBasedAdministrator #>
-        $Private:AipServiceRoleBasedAdministrator = Get-AipServiceRoleBasedAdministrator <# Filling private variable #>
-
-        <# Actions if AipServiceRoleBasedAdministrator variable value is not empty #>
-        If ($Private:AipServiceRoleBasedAdministrator) {
-
-            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AipServiceRoleBasedAdministrator          : $Private:AipServiceRoleBasedAdministrator") <# Extend log file #>
-            Write-ColoredOutput Yellow "AipServiceRoleBasedAdministrator          : $Private:AipServiceRoleBasedAdministrator" <# Output #>
-
+        $AipServiceRoleBasedAdministrators = @(Get-AipServiceRoleBasedAdministrator)
+        If ($AipServiceRoleBasedAdministrators.Count -eq 0) {
+            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value "AipServiceRoleBasedAdministrator          :"
+            Write-ColoredOutput Yellow "AipServiceRoleBasedAdministrator          :"
         }
-        Else { <# Actions if variable value is empty #>
-            
-            Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AipServiceRoleBasedAdministrator          :") <# Extend log file #>
-            Write-ColoredOutput Yellow "AipServiceRoleBasedAdministrator          :" <# Output #>
-
+        Else {
+            $AipServiceRoleBasedAdministrators | ForEach-Object {
+                Add-Content -Path $Global:strUserLogPath"\Collect\AIPServiceConfiguration.log" -Value ("AipServiceRoleBasedAdministrator          : " + $_)
+                Write-ColoredOutput Yellow ("AipServiceRoleBasedAdministrator          : " + $_)
+            }
         }
-            
-        <# Release AipServiceRoleBasedAdministrator variable #>
-        $Private:AipServiceRoleBasedAdministrator = $null 
 
     }
 
@@ -3061,12 +2666,12 @@ Function fncCollectAIPServiceConfiguration {
     fncLogging -strLogFunction "fncCollectAIPServiceConfiguration" -strLogDescription "Export AIP service configuration" -strLogValue "AIPServiceConfiguration.log"
     fncLogging -strLogFunction "fncCollectAIPServiceConfiguration" -strLogDescription "COLLECT AIP SERVICE CONFIGURATION" -strLogValue "Proceeded"
 
-    <# Output #> 
+    <# Output #>
     Write-Output "Log file: $Global:strUserLogPath\Collect\AIPServiceConfiguration.log"
     Write-ColoredOutput Green "COLLECT AIP SERVICE CONFIGURATION: Proceeded.`n"
 
     <# Action if function was called from command line #>
-    If ($Global:bolCommingFromMenu -eq $false) {
+    If ($Global:bolComingFromMenu -eq $false) {
 
         <# Set back window title to default #>
         $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
@@ -3075,21 +2680,7 @@ Function fncCollectAIPServiceConfiguration {
         $Global:bolSkipRequiredUpdates = $false
 
         <# Exit #>
-        Break
-
-    }
-
-    <# Action if function was called from the menu #>
-    If ($Global:bolCommingFromMenu -eq $true) {
-
-        <# Call Pause #>
-        fncPause
-
-        <# Clear console #>
-        Clear-Host
-
-        <# Call ShowMenu #>
-        fncShowMenu    
+        Return
 
     }
 
@@ -3101,13 +2692,13 @@ Function fncCollectProtectionTemplates {
     Write-Output "COLLECT PROTECTION TEMPLATES:"
 
     <# Check if not running as administrator #>
-    If ($Global:bolRunningPrivileged -eq $false) {
+    If ($Global:bolRunningPrivileged -ne $true) {
 
         <# Output #>
-        Write-ColoredOutput Red "ATTENTION: You must run the 'Compliance Utility' in an administrative PowerShell window as a user with local administrative privileges to continue with this option.`nCOLLECT PROTECTION TEMPLATES: Failed.`n"
+        Write-ColoredOutput Red "ATTENTION: You must run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges to continue with this option.`nCOLLECT PROTECTION TEMPLATES: Failed.`n"
 
         <# Action if function was called from command line #>
-        If ($Global:bolCommingFromMenu -eq $false) {
+        If ($Global:bolComingFromMenu -eq $false) {
 
             <# Set back window title to default #>
             $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
@@ -3116,12 +2707,12 @@ Function fncCollectProtectionTemplates {
             $Global:bolSkipRequiredUpdates = $false
 
             <# Exit #>
-            Break
+            Return
 
         }
 
         <# Action if function was called from the menu #>
-        If ($Global:bolCommingFromMenu -eq $true) {
+        If ($Global:bolComingFromMenu -eq $true) {
 
             <# Call Pause #>
             fncPause
@@ -3130,25 +2721,18 @@ Function fncCollectProtectionTemplates {
             Clear-Host
 
             <# Call ShowMenu #>
-            fncShowMenu    
+            fncShowMenu
+
+            Return
 
         }
 
     }
 
-    <# Output #>
-    Write-Output "Initializing, please wait..."
-
     <# Logging #>
     fncLogging -strLogFunction "fncCollecProtectionTemplates" -strLogDescription "COLLECT PROTECTION TEMPLATES" -strLogValue "Initiated"
 
-    <# Action if SkipUpdates was called from command line #>
-    If ($Global:bolSkipRequiredUpdates -eq $false) {
-
-        <# Call function to check and update needed modules #>
-        fncUpdateRequiredModules
-
-    }
+    If (-not (fncTestRequiredModule -strModuleName "AIPService")) { Return }
 
     <# Output #>
     Write-Output "Connecting to AIPService..."
@@ -3167,52 +2751,51 @@ Function fncCollectProtectionTemplates {
 
     }
 
-    <# Connect/logon to AIPService #>
-    If (Connect-AIPService -Verbose:$false -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) { <# Action if AIPService connection was opened #>
+    If (-not (Get-Command -Name Connect-AIPService -ErrorAction SilentlyContinue)) {
+        Write-ColoredOutput Red "ATTENTION: The required cmdlet 'Connect-AIPService' is not available.`nRun 'ComplianceUtility -UpdateModules' to install or update the required module, then restart the Compliance Utility.`n"
+        fncLogging -strLogFunction "fncCollectProtectionTemplates" -strLogDescription "AIPService module" -strLogValue "Connect-AIPService unavailable"
+        Return
+    }
 
-        <# Output #> 
+    <# Connect/logon to AIPService #>
+    Try {
+
+        Connect-AIPService -Verbose:$false -ErrorAction Stop -WarningAction SilentlyContinue | Out-Null
+
+        <# Output #>
         Write-Output "AIPService connected."
 
         <# Logging #>
         fncLogging -strLogFunction "fncCollectProtectionTemplates" -strLogDescription "AIPService connected" -strLogValue $true
 
     }
-    Else{ <# Action if AIPService connection failed #>
+    Catch { <# Action if AIPService connection failed #>
+
+        $Private:strAIPServiceConnectionError = $_.Exception.Message
 
         <# Logging #>
-        fncLogging -strLogFunction "fncCollectProtectionTemplates" -strLogDescription "AIPService connected" -strLogValue $false 
-        fncLogging -strLogFunction "fncCollectProtectionTemplates" -strLogDescription "COLLECT PROTECTION TEMPLATES" -strLogValue "Login failed"
-    
+        fncLogging -strLogFunction "fncCollectProtectionTemplates" -strLogDescription "AIPService connected" -strLogValue $false
+        fncLogging -strLogFunction "fncCollectProtectionTemplates" -strLogDescription "COLLECT PROTECTION TEMPLATES" -strLogValue "Login failed: $Private:strAIPServiceConnectionError"
+
         <# Output #>
-        Write-ColoredOutput Red "COLLECT PROTECTION TEMPLATES: Login failed. Please try again.`n"
+        Write-ColoredOutput Red "COLLECT PROTECTION TEMPLATES: Login failed: $Private:strAIPServiceConnectionError`n"
 
         <# Action if function was called from command line #>
-        If ($Global:bolCommingFromMenu -eq $false) {
+        If ($Global:bolComingFromMenu -eq $false) {
 
             <# Set back window title to default #>
             $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
 
             <# Release global variable back to default (updates active) #>
-            $Global:bolSkipRequiredUpdates = $false    
+            $Global:bolSkipRequiredUpdates = $false
 
             <# Exit #>
-            Break
+            Return
 
         }
 
-        <# Action if function was called from the menu #>
-        If ($Global:bolCommingFromMenu -eq $true) {
-
-            <# Call Pause #>
-            fncPause
-
-            <# Clear console #>
-            Clear-Host
-
-            <# Call ShowMenu #>
-            fncShowMenu    
-
-        }
+        $Private:strAIPServiceConnectionError = $null
+        Return
 
     }
 
@@ -3223,9 +2806,9 @@ Function fncCollectProtectionTemplates {
 
     }
 
-    <# Output #> 
+    <# Output #>
     Write-Output "Collecting protection templates, please wait..."
-    
+
     <# Check for existing folder #>
     If ($(Test-Path $Global:strUserLogPath"\Collect\ProtectionTemplates") -Eq $true) {
 
@@ -3235,10 +2818,10 @@ Function fncCollectProtectionTemplates {
 
         <# Logging #>
         fncLogging -strLogFunction "fncCollectProtectionTemplates" -strLogDescription "Export protection templates" -strLogValue "ProtectionTemplates.xml"
-        fncLogging -strLogFunction "fncCollectProtectionTemplates" -strLogDescription "Export protection templates" -strLogValue "ProtectionTemplateDetails.xml"       
+        fncLogging -strLogFunction "fncCollectProtectionTemplates" -strLogDescription "Export protection templates" -strLogValue "ProtectionTemplateDetails.xml"
 
     }
-    
+
     <# Check if COLLECT\ProtectionTemplates folder exist and create it, if not #>
     If ($(Test-Path -Path $Global:strUserLogPath"\Collect\ProtectionTemplates\ProtectionTemplatesBackup") -Eq $false) {
 
@@ -3255,7 +2838,7 @@ Function fncCollectProtectionTemplates {
         <# Logging #>
         fncLogging -strLogFunction "fncCollectProtectionTemplates" -strLogDescription "Protection template exported" -strLogValue "$Private:ProtectionTemplate.xml"
 
-    } 
+    }
 
     <# Disconnect from AIPService #>
     Disconnect-AIPService | Out-Null
@@ -3267,13 +2850,13 @@ Function fncCollectProtectionTemplates {
     fncLogging -strLogFunction "fncCollectProtectionTemplates" -strLogDescription "AIPService disconnected" -strLogValue $true
     fncLogging -strLogFunction "fncCollectProtectionTemplates" -strLogDescription "COLLECT PROTECTION TEMPLATES" -strLogValue "Proceeded"
 
-    <# Output #> 
+    <# Output #>
     Write-Output "Protection templates: $Global:strUserLogPath\Collect\ProtectionTemplates\ProtectionTemplatesBackup"
     Write-Output "Logs folder: $Global:strUserLogPath\Collect\ProtectionTemplates"
     Write-ColoredOutput Green "COLLECT PROTECTION TEMPLATES: Proceeded.`n"
 
     <# Action if function was called from command line #>
-    If ($Global:bolCommingFromMenu -eq $false) {
+    If ($Global:bolComingFromMenu -eq $false) {
 
         <# Set back window title to default #>
         $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
@@ -3282,21 +2865,7 @@ Function fncCollectProtectionTemplates {
         $Global:bolSkipRequiredUpdates = $false
 
         <# Exit #>
-        Break
-
-    }
-
-    <# Action if function was called from the menu #>
-    If ($Global:bolCommingFromMenu -eq $true) {
-
-        <# Call Pause #>
-        fncPause
-
-        <# Clear console #>
-        Clear-Host
-
-        <# Call ShowMenu #>
-        fncShowMenu    
+        Return
 
     }
 
@@ -3308,13 +2877,13 @@ Function fncCollectLabelsAndPolicies {
     Write-Output "COLLECT LABELS AND POLICIES:"
 
     <# Check if not running as administrator #>
-    If ($Global:bolRunningPrivileged -eq $false) {
+    If ($Global:bolRunningPrivileged -ne $true) {
 
         <# Output #>
-        Write-ColoredOutput Red "ATTENTION: You must run the 'Compliance Utility' in an administrative PowerShell window as a user with local administrative privileges to continue with this option.`nCOLLECT LABELS AND POLICIES: Failed.`n"
+        Write-ColoredOutput Red "ATTENTION: You must run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges to continue with this option.`nCOLLECT LABELS AND POLICIES: Failed.`n"
 
         <# Action if function was called from command line #>
-        If ($Global:bolCommingFromMenu -eq $false) {
+        If ($Global:bolComingFromMenu -eq $false) {
 
             <# Set back window title to default #>
             $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
@@ -3323,12 +2892,12 @@ Function fncCollectLabelsAndPolicies {
             $Global:bolSkipRequiredUpdates = $false
 
             <# Exit #>
-            Break
+            Return
 
         }
 
         <# Action if function was called from the menu #>
-        If ($Global:bolCommingFromMenu -eq $true) {
+        If ($Global:bolComingFromMenu -eq $true) {
 
             <# Call Pause #>
             fncPause
@@ -3337,142 +2906,23 @@ Function fncCollectLabelsAndPolicies {
             Clear-Host
 
             <# Call ShowMenu #>
-            fncShowMenu    
+            fncShowMenu
+
+            Return
 
         }
 
     }
-
-    <# Output #>
-    Write-Output "Initializing, please wait..."
 
     <# Logging #>
     fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "COLLECT LABELS AND POLICIES" -strLogValue "Initiated"
 
-    <# Action if SkipUpdates was called from command line #>
-    If ($Global:bolSkipRequiredUpdates -eq $false) {
+    If (-not (fncTestRequiredModule -strModuleName "ExchangeOnlineManagement")) { Return }
 
-        <# Check for updates only on Windows #>
-        If ([System.Environment]::OSVersion.Platform -eq "Win32NT") { 
-
-            <# Call UpdateRequiredModules #>
-            fncUpdateRequiredModules
-
-        }
-
-        <# Actions if ExchangeOnlineManagement module is installed #>
-        If (Get-Module -ListAvailable -Name "ExchangeOnlineManagement") {
-
-            <# Update ExchangeOnlineManagement, if we can connect to PowerShell Gallery #>
-            If (Find-Module -Name ExchangeOnlineManagement -Repository PSGallery -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) {
-
-                <# Fill variables with version information #>
-                [Version]$Private:strEOPOnlineVersion = (Find-Module -Name ExchangeOnlineManagement -Repository PSGallery).Version
-                [Version]$Private:strEOPLocalVersion = (Get-Module -ListAvailable -Name "AIPService").Version | Select-Object -First 1
-
-                <# Compare local version vs. online version #>
-                If ([Version]::new($Private:strEOPPOnlineVersion.Major, $Private:strEOPPOnlineVersion.Minor, $Private:strEOPPOnlineVersion.Build) -gt [Version]::new($Private:strEOPLocalVersion.Major, $Private:strEOPLocalVersion.Minor, $Private:strEOPLocalVersion.Build) -eq $true) {
-
-                    <# Output #>
-                    Write-Output "Updating Exchange Online Management module, please wait..."
-
-                    <# Update AIPService PowerShell module #>
-                    Update-Module -Verbose:$false -Name ExchangeOnlineManagement -Force -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
-
-                    <# Logging #>
-                    fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "ExchangeOnlineManagement module" -strLogValue "Updated"
-
-                }
-
-                <# Release private variables #>
-                [Version]$Private:strEOPOnlineVersion = $null
-                [Version]$Private:strEOPLocalVersion = $null
-
-            }
-            Else { <# Actions if we can't connect to PowerShell Gallery (no internet connection) #>
-
-                <# Logging #>
-                fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "ExchangeOnlineManagement module update" -strLogValue "Failed"
-
-            }
-
-        }
-
-    }
-
-    <# Actions if ExchangeOnlineManagement module isn't installed #>
-    If (-Not (Get-Module -ListAvailable -Name "ExchangeOnlineManagement")) {
-
-        <# Install ExchangeOnlineManagement if we can connect to PowerShell Gallery #>
-        If (Find-Module -Name ExchangeOnlineManagement -Repository PSGallery -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) {
-
-            <# Output #>
-            Write-Output "Installing Exchange Online Management module, please wait..."
-
-            <# Install ExchangeOnlineManagement PowerShell module #>
-            Install-Module -Verbose:$false -Name ExchangeOnlineManagement -Scope CurrentUser -Repository PSGallery -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "ExchangeOnlineManagement module" -strLogValue "Installed"
-
-            <# Output #>
-            Write-Output "Exchange Online Management module installed."
-            Write-ColoredOutput Red "ATTENTION: To use the Exchange Online Management module, you must close this window and run a new instance of PowerShell for it to work.`nThe 'Compliance Utility' is now terminated."
-
-            <# Release global variable back to default (updates active) #>
-            $Global:bolSkipRequiredUpdates = $false
-
-            <# Call Pause #>
-            fncPause
-    
-            <# Set back window title to default #>
-            $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
-
-            <# Interrupting, because of module not loaded into PowerShell instance #>
-            Break
-
-        }
-        Else { <# Actions if we can't connect to PowerShell Gallery (no internet connection) #>
-
-            <# Output #>
-            Write-ColoredOutput Red "ATTENTION: Collecting labels and policies could not be performed.`nEither PowerShell Gallery cannot be reached or there is no connection to the Internet.`n`nYou must have the Exchange Online Management module installed to proceed.`n`nPlease check the following website and install the latest version of the Exchange Online Management module:`nhttps://www.powershellgallery.com/packages/ExchangeOnlineManagement`n"
-
-            <# Output #>
-            Write-ColoredOutput Red "COLLECT LABELS AND POLICIES: Failed.`n"
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "ExchangeOnlineManagement module installation" -strLogValue "Failed"
-
-            <# Action if function was called from the menu #>
-            If ($Global:bolCommingFromMenu -eq $true) {
-
-                <# Call Pause #>
-                fncPause
-    
-                <# Clear console #>
-                Clear-Host
-
-                <# Call ShowMenu #>
-                fncShowMenu
-
-            }
-
-            <# Action if function was called from command line #>
-            If ($Global:bolCommingFromMenu -eq $false) {
-   
-                <# Release global variable back to default (updates active) #>
-                $Global:bolSkipRequiredUpdates = $false
-
-                <# Set back window title to default #>
-                $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
-
-                <# Interrupt, because of missing internet connection #>
-                Break
-
-            }
-
-        }
-
+    If (-not (Get-Command -Name Connect-IPPSSession -ErrorAction SilentlyContinue)) {
+        Write-ColoredOutput Red "ATTENTION: The required cmdlet 'Connect-IPPSSession' is not available.`nRun 'ComplianceUtility -UpdateModules' to install or update the required module, then restart the Compliance Utility.`n"
+        fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "ExchangeOnlineManagement module" -strLogValue "Connect-IPPSSession unavailable"
+        Return
     }
 
     <# Logging #>
@@ -3482,63 +2932,78 @@ Function fncCollectLabelsAndPolicies {
     Write-Output "Connecting to Microsoft Purview compliance portal..."
 
     <# Remember default progress bar status: "Continue" #>
-    $Private:strOriginalPreference = $Global:ProgressPreference 
+    $Private:strOriginalPreference = $Global:ProgressPreference
     $Global:ProgressPreference = "SilentlyContinue" <# Hiding progress bar #>
 
     <# Try to connect/logon #>
     Try {
 
         <# Connect to Microsoft Purview compliance portal #>
-        Connect-IPPSSession -Verbose:$false -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
+        $Private:RequiredPurviewCommands = @(
+            "Get-Label"
+            "Get-LabelPolicy"
+            "Get-LabelPolicyRule"
+            "Get-AutoSensitivityLabelPolicy"
+            "Get-AutoSensitivityLabelRule"
+        )
+        Connect-IPPSSession -CommandName $Private:RequiredPurviewCommands -ShowBanner:$false -Verbose:$false -WarningAction SilentlyContinue -ErrorAction Stop | Out-Null
 
     }
     Catch { <# Catch for any error #>
 
+        $Private:PurviewConnectionError = $_.Exception.Message
+
         <# Logging #>
-        fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Microsoft Purview compliance portal connected" -strLogValue $false 
-        fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Microsoft Purview compliance portal" -strLogValue "Login failed"
-    
+        fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Microsoft Purview compliance portal connected" -strLogValue $false
+        fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Microsoft Purview compliance portal" -strLogValue "Login failed: $Private:PurviewConnectionError"
+
         <# Output #>
-        Write-ColoredOutput Red "COLLECT LABELS AND POLICIES: Login failed. Please try again.`n"
+        Write-ColoredOutput Red "COLLECT LABELS AND POLICIES: Login failed: $Private:PurviewConnectionError`n"
+
+        $Global:ProgressPreference = $Private:strOriginalPreference
 
         <# Action if function was called from the menu #>
-        If ($Global:bolCommingFromMenu -eq $true) {
+        If ($Global:bolComingFromMenu -eq $true) {
 
             <# Call Pause #>
             fncPause
-    
+
             <# Clear console #>
             Clear-Host
 
             <# Call ShowMenu #>
             fncShowMenu
 
+            Return
+
         }
 
         <# Action if function was called from command line #>
-        If ($Global:bolCommingFromMenu -eq $false) {
+        If ($Global:bolComingFromMenu -eq $false) {
 
             <# Release global variable back to default (updates active) #>
-            $Global:bolSkipRequiredUpdates = $false           
+            $Global:bolSkipRequiredUpdates = $false
 
             <# Set back window title to default #>
             $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
 
             <# Interrupt, because of missing internet connection #>
-            Break
+            Return
 
         }
 
+        Return
+
     }
 
-    <# Output #> 
+    <# Output #>
     Write-Output "Microsoft Purview compliance portal connected."
 
     <# Logging #>
     fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Microsoft Purview compliance portal connected" -strLogValue $true
 
-    <# Output #> 
-    Write-Output "Collecting labels and policies, please wait..."
+    <# Output #>
+    Write-Output "Collecting labels and policies. Please wait, this may take a while..."
 
     <# Detect/create COLLECT\LabelsAndPolicies folder #>
     If ($(Test-Path -Path $Global:strUserLogPath"\Collect\LabelsAndPolicies") -Eq $false) {
@@ -3553,7 +3018,7 @@ Function fncCollectLabelsAndPolicies {
         <# Collect labels #>
         Get-Label -WarningAction SilentlyContinue | Export-Clixml -Path $Global:strUserLogPath"\Collect\LabelsAndPolicies\Labels.xml" | Out-Null
         fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Export labels and policies" -strLogValue "Labels.xml" <# Logging #>
-    
+
         <# Collect labels with details #>
         Get-Label -IncludeDetailedLabelActions -WarningAction SilentlyContinue | Export-Clixml -Path $Global:strUserLogPath"\Collect\LabelsAndPolicies\LabelsDetailedActions.xml" | Out-Null
         fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Export labels and policies" -strLogValue "LabelsDetailedActions.xml" <# Logging #>
@@ -3566,41 +3031,56 @@ Function fncCollectLabelsAndPolicies {
         Get-LabelPolicy -WarningAction SilentlyContinue | ForEach-Object {Get-LabelPolicyRule -Policy $_.Identity} | Export-Clixml -Path $Global:strUserLogPath"\Collect\LabelsAndPolicies\LabelRules.xml" | Out-Null
         fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Export labels and policies" -strLogValue "LabelRules.xml" <# Logging #>
 
-        <# Collect auto-labeling policies #>
-        Get-AutoSensitivityLabelPolicy -WarningAction SilentlyContinue | ForEach-Object {Get-AutoSensitivityLabelPolicy -Identity $_.Identity} | Export-Clixml -Path $Global:strUserLogPath"\Collect\LabelsAndPolicies\AutoLabelPolicies.xml" | Out-Null
-        fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Export labels and policies" -strLogValue "AutoLabelPolicies.xml" <# Logging #>
+        <# Auto-labeling cmdlets are only exposed when the connected account has the required Purview permissions #>
+        $Private:GetAutoLabelPolicyCommand = Get-Command -Name Get-AutoSensitivityLabelPolicy -ErrorAction SilentlyContinue
+        $Private:GetAutoLabelRuleCommand = Get-Command -Name Get-AutoSensitivityLabelRule -ErrorAction SilentlyContinue
 
-        <# Collect auto-labeling rules #>
-        Get-AutoSensitivityLabelRule -WarningAction SilentlyContinue | ForEach-Object {Get-AutoSensitivityLabelRule -Policy $_.Identity} | Export-Clixml -Path $Global:strUserLogPath"\Collect\LabelsAndPolicies\AutoLabelRules.xml" | Out-Null
-        fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Export labels and policies" -strLogValue "AutoLabelRules.xml" <# Logging #>
+        If ($Private:GetAutoLabelPolicyCommand -and $Private:GetAutoLabelRuleCommand) {
+
+            <# Collect auto-labeling policies #>
+            $Private:AutoLabelPolicies = @(Get-AutoSensitivityLabelPolicy -WarningAction SilentlyContinue)
+            $Private:AutoLabelPolicies | ForEach-Object {Get-AutoSensitivityLabelPolicy -Identity $_.Identity} | Export-Clixml -Path $Global:strUserLogPath"\Collect\LabelsAndPolicies\AutoLabelPolicies.xml" | Out-Null
+            fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Export labels and policies" -strLogValue "AutoLabelPolicies.xml" <# Logging #>
+
+            <# Collect rules for every auto-labeling policy #>
+            $Private:AutoLabelPolicies | ForEach-Object {Get-AutoSensitivityLabelRule -Policy $_.Identity} | Export-Clixml -Path $Global:strUserLogPath"\Collect\LabelsAndPolicies\AutoLabelRules.xml" | Out-Null
+            fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Export labels and policies" -strLogValue "AutoLabelRules.xml" <# Logging #>
+
+        }
+        Else {
+
+            $Private:MissingAutoLabelCommands = @(
+                If (-not $Private:GetAutoLabelPolicyCommand) { "Get-AutoSensitivityLabelPolicy" }
+                If (-not $Private:GetAutoLabelRuleCommand) { "Get-AutoSensitivityLabelRule" }
+            ) -join ", "
+
+            <# Logging #>
+            fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Auto-labeling policies skipped; unavailable Purview cmdlets" -strLogValue $Private:MissingAutoLabelCommands
+
+        }
 
     }
 
     <# Logging #>
     fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Export labels and policies folder" -strLogValue "\Collect\LabelsAndPolicies"
 
-    <# Detect Windows #>
-    If ([System.Environment]::OSVersion.Platform -eq "Win32NT") { 
+    <# Check if Office CLP folder exist #>
+    If ($(Test-Path -Path $env:LOCALAPPDATA\Microsoft\Office\CLP) -Eq $true) {
 
-        <# Check if Office CLP folder exist (Windows only) #>
-        If ($(Test-Path -Path $env:LOCALAPPDATA\Microsoft\Office\CLP) -Eq $true) {
+        <# Perform action only, if the CLP folder contain files (Note: Afer a RESET this folder is empty). #>
+        If (((Get-ChildItem -LiteralPath $env:LOCALAPPDATA\Microsoft\Office\CLP -File -Force | Select-Object -First 1 | Measure-Object).Count -ne 0)) {
 
-            <# Perform action only, if the CLP folder contain files (Note: Afer a RESET this folder is empty). #>
-            If (((Get-ChildItem -LiteralPath $env:LOCALAPPDATA\Microsoft\Office\CLP -File -Force | Select-Object -First 1 | Measure-Object).Count -ne 0)) {
+            <# Copy CLP Office policy folder content #>
+            fncCopyItem $env:LOCALAPPDATA\Microsoft\Office\CLP $Global:strUserLogPath"\Collect\LabelsAndPolicies" "CLP\*"
 
-                <# Copy CLP Office policy folder content #>
-                fncCopyItem $env:LOCALAPPDATA\Microsoft\Office\CLP $Global:strUserLogPath"\Collect\LabelsAndPolicies" "CLP\*"
+            <# Private variable for unique logging/output with CLP #>
+            $Private:CLPPolicy = $true
 
-                <# Private variable for unique logging/output with CLP #>
-                $Private:CLPPolicy = $true
-
-                <# Logging #>
-                fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Export Office CLP folder" -strLogValue "\Collect\LabelsAndPolicies\CLP"
-
-            }
+            <# Logging #>
+            fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Export Office CLP folder" -strLogValue "\Collect\LabelsAndPolicies\CLP"
 
         }
-    
+
     }
 
     <# Set back progress bar #>
@@ -3608,27 +3088,16 @@ Function fncCollectLabelsAndPolicies {
 
     <# logging based on existence of CLP folder #>
     If ($Private:CLPPolicy -Eq $true) {
-        
-        <# Output #> 
+
+        <# Output #>
         Write-Output "`nLog folder: $Global:strUserLogPath\Collect\LabelsAndPolicies"
-        Write-Output "Office CLP policy folder: $Global:strUserLogPath\Collect\LabelsAndPolicies\CLP" <# Only available on Windows #>
+        Write-Output "Office CLP policy folder: $Global:strUserLogPath\Collect\LabelsAndPolicies\CLP"
 
     }
     Else {
 
-        <# Output on macOS #>
-        If ($IsMacOS -eq $true) {
-
-            Write-Output "`nLog folder: $Global:strUserLogPath/Collect/LabelsAndPolicies"
-
-        }
-
-        <# Output on Windows #>
-        If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
-
-            Write-Output "`nLog folder: $Global:strUserLogPath\Collect\LabelsAndPolicies"
-
-        }
+        <# Output #>
+        Write-Output "`nLog folder: $Global:strUserLogPath\Collect\LabelsAndPolicies"
 
     }
 
@@ -3642,40 +3111,26 @@ Function fncCollectLabelsAndPolicies {
     fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "Microsoft Purview compliance portal disconnected" -strLogValue $true
     fncLogging -strLogFunction "fncCollectLabelsAndPolicies" -strLogDescription "COLLECT LABELS AND POLICIES" -strLogValue "Proceeded"
 
-    <# Output #> 
+    <# Output #>
     Write-Output "Microsoft Purview compliance portal disconnected."
     Write-ColoredOutput Green "COLLECT LABELS AND POLICIES: Proceeded.`n"
 
-    <# Action if function was called from the menu #>
-    If ($Global:bolCommingFromMenu -eq $true) {
-
-        <# Call Pause #>
-        fncPause
-    
-        <# Clear console #>
-        Clear-Host
-
-        <# Call ShowMenu #>
-        fncShowMenu
-
-    }
-
     <# Action if function was called from command line #>
-    If ($Global:bolCommingFromMenu -eq $false) {
+    If ($Global:bolComingFromMenu -eq $false) {
 
         <# Release global variable back to default (updates active) #>
-        $Global:bolSkipRequiredUpdates = $false        
+        $Global:bolSkipRequiredUpdates = $false
 
         <# Set back window title to default #>
         $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
 
         <# Interrupt, because of missing internet connection #>
-        Break
+        Return
 
     }
 
 }
-        
+
 Function fncCollectEndpointURLs {
 
     <# Logging #>
@@ -3708,14 +3163,36 @@ Function fncCollectEndpointURLs {
             Out-File -FilePath $Global:strUserLogPath"\Collect\EndpointURLs.log" -Encoding UTF8 -Append -Force
 
         }
-        
+
+    }
+
+    <# Return the host portion of an endpoint URL without relying on a fixed URL length #>
+    Function fncGetEndpointHost ($strEndpointUrl, $strFallbackHost) {
+
+        If (-not [string]::IsNullOrWhiteSpace([string]$strEndpointUrl)) {
+            Try {
+                $Private:EndpointUri = [System.Uri]$strEndpointUrl
+                If (-not [string]::IsNullOrWhiteSpace($Private:EndpointUri.Host)) {
+                    Return $Private:EndpointUri.Host
+                }
+            }
+            Catch {
+                <# The value is not a valid absolute URI; use the fallback below #>
+                Write-Verbose "Endpoint URL '$strEndpointUrl' is not a valid URI; using the fallback host."
+            }
+        }
+
+        If (-not [string]::IsNullOrWhiteSpace([string]$strFallbackHost)) {
+            Return $strFallbackHost
+        }
+
+        Return $null
     }
 
     <# Check for COLLECT Endpoints URLs [MSIPC] if bootstrap was done/running with user privileges/reading URLs from registry #>
     If ($(Test-Path -Path "HKCU:\Software\Classes\Local Settings\Software\Microsoft\MSIPC") -Eq $true) {
 
         <# Output #>
-        Write-Output "Initializing, please wait..."
         Write-Output "Verifying endpoint URLs...`n"
 
         <# Check if "EndpointURLs"-folder and log file exist and create it, if not #>
@@ -3725,34 +3202,35 @@ Function fncCollectEndpointURLs {
         Get-ChildItem -Path "HKCU:\Software\Classes\Local Settings\Software\Microsoft\MSIPC" | ForEach-Object {
 
             <# Read Tenant Id #>
-            $Private:strMainKey = $_.Name.Substring(75).ToString()
-         
+            $Private:strMainKey = $_.PSChildName
+
             <# Actions if it's about ".aadrm.com", but not about "discover.aadrm.com" #>
             If ($Private:strMainKey -like "*.aadrm.com" -and $Private:strMainKey -notmatch "discover.aadrm.com") {
 
                 <# Private variabel definition for Tenant Id string #>
-                $Private:strTenantId = $Private:strMainKey.Remove(36)
+                $Private:strTenantId = ($Private:strMainKey -split "\.")[0]
 
-                <# Output #> 
+                <# Output #>
                 Write-ColoredOutput Magenta "-------------------------------------------------`nTenant Id:  $Private:strTenantId`n-------------------------------------------------`n"
 
                 <# Create Tenant Id as first log entry #>
                 Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value "-----------------------------------------------`nTenant Id: $Private:strTenantId`n-----------------------------------------------"
 
                 <# Define and filling variables with URLs #>
-                $Private:MyLicensingIntranetDistributionPointUrl = (Get-ItemProperty "HKCU:\Software\Classes\Local Settings\Software\Microsoft\MSIPC\$Private:strMainKey\Identities" -ErrorAction SilentlyContinue).InternalUrl
-                $Private:MyLicensingExtranetDistributionPointUrl = (Get-ItemProperty "HKCU:\Software\Classes\Local Settings\Software\Microsoft\MSIPC\$Private:strMainKey\Identities" -ErrorAction SilentlyContinue).ExternalUrl
+                $Private:IdentityConfiguration = Get-ItemProperty "HKCU:\Software\Classes\Local Settings\Software\Microsoft\MSIPC\$Private:strMainKey\Identities" -ErrorAction SilentlyContinue
+                $Private:ServerConfiguration = Get-ItemProperty "HKCU:\Software\Classes\Local Settings\Software\Microsoft\MSIPC\$Private:strMainKey\ServerInfo" -ErrorAction SilentlyContinue
+                $Private:ServiceDiscoveryHost = fncGetEndpointHost $Private:ServerConfiguration.ServiceDiscoveryUri $Private:strMainKey
 
-                <# Trimm start of "https://", and end of "/_wmcs/licensing" #>
-                $Private:MyLicensingIntranetDistributionPointUrl = $Private:MyLicensingIntranetDistributionPointUrl.substring($Private:MyLicensingIntranetDistributionPointUrl.length - 69, $Private:MyLicensingIntranetDistributionPointUrl.length - 24)
-                $Private:MyLicensingExtranetDistributionPointUrl = $Private:MyLicensingExtranetDistributionPointUrl.substring($Private:MyLicensingExtranetDistributionPointUrl.length - 69, $Private:MyLicensingExtranetDistributionPointUrl.length - 24)
+                <# Current clients may only expose ServiceDiscoveryUri; use its host as fallback #>
+                $Private:MyLicensingIntranetDistributionPointUrl = fncGetEndpointHost $Private:IdentityConfiguration.InternalUrl $Private:ServiceDiscoveryHost
+                $Private:MyLicensingExtranetDistributionPointUrl = fncGetEndpointHost $Private:IdentityConfiguration.ExternalUrl $Private:ServiceDiscoveryHost
 
                 <# Define and fill variables: Extending colledted registry key #>
                 $Private:MyCertificationDistributionPointUrl = $Private:strMainKey
 
                 <# Create Timestamp #>
                 Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value ("Date/Timestamp: " + (Get-Date -Verbose:$false -UFormat "$Private:MyTimestamp"))
-                
+
                 <# Add read mode #>
                 Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value ("Read from registry [MSIPC]:`n")
 
@@ -3768,7 +3246,7 @@ Function fncCollectEndpointURLs {
                 fncLogging -strLogFunction "fncCollectEndpointURLs" -strLogDescription "COLLECT ENDPOINT URLs" -strLogValue "Proceeded"
 
             }
-            
+
         }
 
         <# Check for COLLECT Endpoints URLs [MSIP] if bootstrap was done/running in "non-admin mode"/reading URLs from registry #>
@@ -3781,34 +3259,35 @@ Function fncCollectEndpointURLs {
             Get-ChildItem -Path "HKCU:\Software\Classes\Local Settings\Software\Microsoft\MSIPC\MSIP" | ForEach-Object {
 
                 <# Read Tenant Id #>
-                $Private:strMainKey = $_.Name.Substring(80).ToString()
-         
+                $Private:strMainKey = $_.PSChildName
+
                 <# Actions if it's about ".aadrm.com", but not about "discover.aadrm.com" #>
                 If ($Private:strMainKey -like "*.aadrm.com" -and $Private:strMainKey -notmatch "discover.aadrm.com") {
 
                     <# Private variabel definition for Tenant Id string #>
-                    $Private:strTenantId = $Private:strMainKey.Remove(36)
+                    $Private:strTenantId = ($Private:strMainKey -split "\.")[0]
 
-                    <# Output #> 
+                    <# Output #>
                     Write-ColoredOutput Magenta "------------------------------------------------`nTenant Id:  $Private:strTenantId`n------------------------------------------------`n"
 
                     <# Create Tenant Id as first log entry #>
                     Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value "------------------------------------------------`nTenant Id: $Private:strTenantId`n------------------------------------------------"
 
                     <# Define and fill variables with URLs #>
-                    $Private:MyLicensingIntranetDistributionPointUrl = (Get-ItemProperty "HKCU:\Software\Classes\Local Settings\Software\Microsoft\MSIPC\MSIP\$Private:strMainKey\Identities" -ErrorAction SilentlyContinue).InternalUrl
-                    $Private:MyLicensingExtranetDistributionPointUrl = (Get-ItemProperty "HKCU:\Software\Classes\Local Settings\Software\Microsoft\MSIPC\MSIP\$Private:strMainKey\Identities" -ErrorAction SilentlyContinue).ExternalUrl
+                    $Private:IdentityConfiguration = Get-ItemProperty "HKCU:\Software\Classes\Local Settings\Software\Microsoft\MSIPC\MSIP\$Private:strMainKey\Identities" -ErrorAction SilentlyContinue
+                    $Private:ServerConfiguration = Get-ItemProperty "HKCU:\Software\Classes\Local Settings\Software\Microsoft\MSIPC\MSIP\$Private:strMainKey\ServerInfo" -ErrorAction SilentlyContinue
+                    $Private:ServiceDiscoveryHost = fncGetEndpointHost $Private:ServerConfiguration.ServiceDiscoveryUri $Private:strMainKey
 
-                    <# Trimm start of "https://", and end of "/_wmcs/licensing" #>
-                    $Private:MyLicensingIntranetDistributionPointUrl = $Private:MyLicensingIntranetDistributionPointUrl.substring($Private:MyLicensingIntranetDistributionPointUrl.length - 69, $Private:MyLicensingIntranetDistributionPointUrl.length - 24)
-                    $Private:MyLicensingExtranetDistributionPointUrl = $Private:MyLicensingExtranetDistributionPointUrl.substring($Private:MyLicensingExtranetDistributionPointUrl.length - 69, $Private:MyLicensingExtranetDistributionPointUrl.length - 24)
+                    <# Current clients may only expose ServiceDiscoveryUri; use its host as fallback #>
+                    $Private:MyLicensingIntranetDistributionPointUrl = fncGetEndpointHost $Private:IdentityConfiguration.InternalUrl $Private:ServiceDiscoveryHost
+                    $Private:MyLicensingExtranetDistributionPointUrl = fncGetEndpointHost $Private:IdentityConfiguration.ExternalUrl $Private:ServiceDiscoveryHost
 
                     <# Define and fill variables: Extending colledted registry key #>
                     $Private:MyCertificationDistributionPointUrl = $Private:strMainKey
 
                     <# Create Timestamp #>
                     Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value ("Date/Timestamp: " + (Get-Date -Verbose:$false -UFormat "$Private:MyTimestamp"))
-                
+
                     <# Add read mode #>
                     Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value ("Read from registry [MSIP]:`n")
 
@@ -3818,11 +3297,11 @@ Function fncCollectEndpointURLs {
                     fncVerifyIssuer -strCertURL $Private:MyCertificationDistributionPointUrl -strEndpointName "CertificationDistributionPointUrl" -strLogPath $Private:strCertLogPath
                     fncVerifyIssuer -strCertURL $Private:MyUnifiedLabelingDistributionPointUrl -strEndpointName "UnifiedLabelingDistributionPointUrl" -strLogPath $Private:strCertLogPath
                     fncVerifyIssuer -strCertURL $Private:MyTelemetryDistributionPointUrl -strEndpointName "TelemetryDistributionPointUrl" -strLogPath $Private:strCertLogPath
-                    
+
                 }
-            
+
             }
- 
+
         }
 
     }
@@ -3831,16 +3310,7 @@ Function fncCollectEndpointURLs {
         <# Actions if running administrative #>
         If ($Global:bolRunningPrivileged -eq $true) {
 
-            <# Output #>
-            Write-Output "Initializing, please wait..."
-
-            <# Action if SkipUpdates was called from command line #>
-            If ($Global:bolSkipRequiredUpdates -eq $false) {
-
-                <# Call function to check and update needed modules #>
-                fncUpdateRequiredModules
-
-            }
+            If (-not (fncTestRequiredModule -strModuleName "AIPService")) { Return }
 
             <# Output #>
             Write-Output "Connecting to AIPService..."
@@ -3859,27 +3329,37 @@ Function fncCollectEndpointURLs {
 
             }
 
-            <# Connect/logon to AIPService #>
-            If (Connect-AIPService -Verbose:$false -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) { <# Action if AIPService connection was opened #>
+            If (-not (Get-Command -Name Connect-AIPService -ErrorAction SilentlyContinue)) {
+                Write-ColoredOutput Red "ATTENTION: The required cmdlet 'Connect-AIPService' is not available.`nRun 'ComplianceUtility -UpdateModules' to install or update the required module, then restart the Compliance Utility.`n"
+                fncLogging -strLogFunction "fncCollectEndpointURLs" -strLogDescription "AIPService module" -strLogValue "Connect-AIPService unavailable"
+                Return
+            }
 
-                <# Output #> 
+            <# Connect/logon to AIPService #>
+            Try {
+
+                Connect-AIPService -Verbose:$false -ErrorAction Stop -WarningAction SilentlyContinue | Out-Null
+
+                <# Output #>
                 Write-Output "AIPService connected"
 
                 <# Logging #>
                 fncLogging -strLogFunction "fncCollectEndpointURLs" -strLogDescription "AIPService connected" -strLogValue $true
 
             }
-            Else{ <# Action if AIPService connection failed #>
+            Catch { <# Action if AIPService connection failed #>
+
+                $Private:strAIPServiceConnectionError = $_.Exception.Message
 
                 <# Logging #>
-                fncLogging -strLogFunction "fncCollectEndpointURLs" -strLogDescription "AIPService connected" -strLogValue $false 
-                fncLogging -strLogFunction "fncCollectEndpointURLs" -strLogDescription "COLLECT ENDPOINT URLs" -strLogValue "Login failed"
-            
+                fncLogging -strLogFunction "fncCollectEndpointURLs" -strLogDescription "AIPService connected" -strLogValue $false
+                fncLogging -strLogFunction "fncCollectEndpointURLs" -strLogDescription "COLLECT ENDPOINT URLs" -strLogValue "Login failed: $Private:strAIPServiceConnectionError"
+
                 <# Output #>
-                Write-ColoredOutput Red "COLLECT ENDPOINT URLs: Login failed. Please try again.`n"
+                Write-ColoredOutput Red "COLLECT ENDPOINT URLs: Login failed: $Private:strAIPServiceConnectionError`n"
 
                 <# Action if function was called from command line #>
-                If ($Global:bolCommingFromMenu -eq $false) {
+                If ($Global:bolComingFromMenu -eq $false) {
 
                     <# Set back window title to default #>
                     $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
@@ -3888,72 +3368,40 @@ Function fncCollectEndpointURLs {
                     $Global:bolSkipRequiredUpdates = $false
 
                     <# Exit #>
-                    Break
+                    Return
 
                 }
 
-                <# Action if function was called from the menu #>
-                If ($Global:bolCommingFromMenu -eq $true) {
-
-                    <# Call Pause #>
-                    fncPause
-
-                    <# Clear console #>
-                    Clear-Host
-
-                    <# Call ShowMenu #>
-                    fncShowMenu    
-
-                }
+                $Private:strAIPServiceConnectionError = $null
+                Return
 
             }
 
             <# Output #>
             Write-Output "Verifying endpoint URLs...`n"
 
-            <# Private variabel definition for Tenant Id string #>
-            $Private:strTenantId = (Get-AipServiceConfiguration).RightsManagementServiceId
+            <# Retrieve the AIP service configuration once and process it directly #>
+            Get-AipServiceConfiguration | ForEach-Object {
+                Write-ColoredOutput Magenta ("------------------------------------------------`nTenant Id:  " + $_.RightsManagementServiceId + "`n------------------------------------------------`n")
 
-            <# Output #> 
-            Write-ColoredOutput Magenta "------------------------------------------------`nTenant Id:  $Private:strTenantId`n------------------------------------------------`n"
+                fncCreateLogFileAndFolder $Private:strCertLogPath
+                Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value ("------------------------------------------------`nTenant Id: " + $_.RightsManagementServiceId + "`n------------------------------------------------")
+                Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value ("Date/Timestamp: " + (Get-Date -Verbose:$false -UFormat "$Private:MyTimestamp"))
+                Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value ("Read from portal:`n")
 
-            <# Define and fill variables with URLs #>
-            $Private:MyLicensingIntranetDistributionPointUrl = (Get-AipServiceConfiguration).LicensingIntranetDistributionPointUrl.ToString()
-            $Private:MyLicensingExtranetDistributionPointUrl = (Get-AipServiceConfiguration).LicensingExtranetDistributionPointUrl.ToString()
-            $Private:MyCertificationDistributionPointUrl = (Get-AipServiceConfiguration).CertificationExtranetDistributionPointUrl.ToString()
-
-            <# Trimm start of "https://", and end of "/_wmcs/licensing" #>
-            $Private:MyLicensingIntranetDistributionPointUrl = $Private:MyLicensingIntranetDistributionPointUrl.substring($Private:MyLicensingIntranetDistributionPointUrl.length - 69, $Private:MyLicensingIntranetDistributionPointUrl.length - 24)
-            $Private:MyLicensingExtranetDistributionPointUrl = $Private:MyLicensingExtranetDistributionPointUrl.substring($Private:MyLicensingExtranetDistributionPointUrl.length - 69, $Private:MyLicensingExtranetDistributionPointUrl.length - 24)
-            
-            <# Trimm start of "https://", and end of "/_wmcs/certification" #>
-            $Private:MyCertificationDistributionPointUrl = $Private:MyCertificationDistributionPointUrl.substring($Private:MyCertificationDistributionPointUrl.length - 73, $Private:MyCertificationDistributionPointUrl.length - 28)
-
-            <# Check if "EndpointURLs"-folder and log file exist and create it, if not #>
-            fncCreateLogFileAndFolder $Private:strCertLogPath
-
-            <# Create Tenant Id as first log entry #>
-            Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value "------------------------------------------------`nTenant Id: $Private:strTenantId`n------------------------------------------------"
-
-            <# Create Timestamp #>
-            Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value ("Date/Timestamp: " + (Get-Date -Verbose:$false -UFormat "$Private:MyTimestamp"))
-
-            <# Add read mode #>
-            Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value ("Read from portal:`n")
-
-            <# Call function to verify endpoint and certificate issuer #>
-            fncVerifyIssuer -strCertURL $Private:MyLicensingIntranetDistributionPointUrl -strEndpointName "LicensingIntranetDistributionPointUrl" -strLogPath $Private:strCertLogPath
-            fncVerifyIssuer -strCertURL $Private:MyLicensingExtranetDistributionPointUrl -strEndpointName "LicensingExtranetDistributionPointUrl" -strLogPath $Private:strCertLogPath
-            fncVerifyIssuer -strCertURL $Private:MyCertificationDistributionPointUrl -strEndpointName "CertificationDistributionPointUrl" -strLogPath $Private:strCertLogPath
-            fncVerifyIssuer -strCertURL $Private:MyUnifiedLabelingDistributionPointUrl -strEndpointName "UnifiedLabelingDistributionPointUrl" -strLogPath $Private:strCertLogPath
-            fncVerifyIssuer -strCertURL $Private:MyTelemetryDistributionPointUrl -strEndpointName "TelemetryDistributionPointUrl" -strLogPath $Private:strCertLogPath
+                fncVerifyIssuer -strCertURL (fncGetEndpointHost $_.LicensingIntranetDistributionPointUrl $null) -strEndpointName "LicensingIntranetDistributionPointUrl" -strLogPath $Private:strCertLogPath
+                fncVerifyIssuer -strCertURL (fncGetEndpointHost $_.LicensingExtranetDistributionPointUrl $null) -strEndpointName "LicensingExtranetDistributionPointUrl" -strLogPath $Private:strCertLogPath
+                fncVerifyIssuer -strCertURL (fncGetEndpointHost $_.CertificationExtranetDistributionPointUrl $null) -strEndpointName "CertificationDistributionPointUrl" -strLogPath $Private:strCertLogPath
+                fncVerifyIssuer -strCertURL $Private:MyUnifiedLabelingDistributionPointUrl -strEndpointName "UnifiedLabelingDistributionPointUrl" -strLogPath $Private:strCertLogPath
+                fncVerifyIssuer -strCertURL $Private:MyTelemetryDistributionPointUrl -strEndpointName "TelemetryDistributionPointUrl" -strLogPath $Private:strCertLogPath
+            }
 
             <# Disconnect from AIPService #>
             Disconnect-AIPService | Out-Null
 
             <# Output #>
             Write-Output "AIPService disconnected`n"
-    
+
             <# Logging #>
             fncLogging -strLogFunction "fncCollectEndpointURLs" -strLogDescription "AIPService disconnected" -strLogValue $true
             fncLogging -strLogFunction "fncCollectEndpointURLs" -strLogDescription "Export endpoint URLs" -strLogValue "EndpointURLs.log"
@@ -3964,26 +3412,26 @@ Function fncCollectEndpointURLs {
 
         }
         Else { <# Actions if running with user privileges #>
-    
+
             <# Logging on PowerShell Desktop (5.1) #>
             If ($PSVersionTable.PSEdition.ToString() -eq "Desktop" -and [Version]::new($PSVersionTable.PSVersion.Major, $PSVersionTable.PSVersion.Minor) -eq [Version]::new("5.1")) {
-                
+
                 <# Output #>
-                Write-ColoredOutput Red "ATTENTION: You must run the 'Compliance Utility' in an administrative PowerShell window as a user with local administrative privileges to continue with this option. Alternatively, you can start (bootstrap) any Microsoft 365 App and try again."
-                
+                Write-ColoredOutput Red "ATTENTION: You must run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges to continue with this option. Alternatively, you can start (bootstrap) any Microsoft 365 app and try again."
+
             }
             Else { <# Logging on PowerShell 7.x #>
 
                 <# Output #>
-                Write-ColoredOutput Red "ATTENTION: You must run the 'Compliance Utility' in an administrative PowerShell window as a user with local administrative privileges to continue with this option."
+                Write-ColoredOutput Red "ATTENTION: You must run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges to continue with this option."
 
             }
-            
+
              <# Output #>
              Write-ColoredOutput Red "COLLECT ENDPOINT URLs: Failed.`n"
 
             <# Action if function was called from command line #>
-            If ($Global:bolCommingFromMenu -eq $false) {
+            If ($Global:bolComingFromMenu -eq $false) {
 
                 <# Set back window title to default #>
                 $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
@@ -3992,12 +3440,12 @@ Function fncCollectEndpointURLs {
                 $Global:bolSkipRequiredUpdates = $false
 
                 <# Exit #>
-                Break
+                Return
 
             }
 
             <# Action if function was called from the menu #>
-            If ($Global:bolCommingFromMenu -eq $true) {
+            If ($Global:bolComingFromMenu -eq $true) {
 
                 <# Call Pause #>
                 fncPause
@@ -4006,7 +3454,7 @@ Function fncCollectEndpointURLs {
                 Clear-Host
 
                 <# Call ShowMenu #>
-                fncShowMenu    
+                fncShowMenu
 
             }
 
@@ -4017,7 +3465,7 @@ Function fncCollectEndpointURLs {
     <# Output #>
     Write-Output "Log file: $Global:strUserLogPath\Collect\EndpointURLs.log"
     Write-ColoredOutput Green "COLLECT ENDPOINT URLs: Proceeded.`n"
-    
+
     <# Release private variables #>
     $Private:MyLicensingIntranetDistributionPointUrl = $null
     $Private:MyLicensingExtranetDistributionPointUrl = $null
@@ -4026,7 +3474,246 @@ Function fncCollectEndpointURLs {
     $Private:strTenantId = $null
     $Private:strMainKey = $null
     $Private:strCertLogPath = $null
-        
+
+}
+
+Function fncCollectExchangeIRMConfiguration {
+
+    <# Output #>
+    Write-Output "COLLECT EXCHANGE IRM CONFIGURATION:"
+
+    <# Check if not running as administrator #>
+    If ($Global:bolRunningPrivileged -ne $true) {
+
+        <# Output #>
+        Write-ColoredOutput Red "ATTENTION: You must run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges to continue with this option.`nCOLLECT EXCHANGE IRM CONFIGURATION: Failed.`n"
+
+        <# Action if function was called from command line #>
+        If ($Global:bolComingFromMenu -eq $false) {
+
+            <# Set back window title to default #>
+            $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
+
+            <# Release global variable back to default (updates active) #>
+            $Global:bolSkipRequiredUpdates = $false
+
+            <# Exit #>
+            Return
+
+        }
+
+        <# Action if function was called from the menu #>
+        If ($Global:bolComingFromMenu -eq $true) {
+
+            <# Call Pause #>
+            fncPause
+
+            <# Clear console #>
+            Clear-Host
+
+            <# Call ShowMenu #>
+            fncShowMenu
+
+            Return
+
+        }
+
+    }
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectExchangeIRMConfiguration" -strLogDescription "COLLECT EXCHANGE IRM CONFIGURATION" -strLogValue "Initiated"
+
+    If (-not (fncTestRequiredModule -strModuleName "ExchangeOnlineManagement")) { Return }
+
+    If (-not (Get-Command -Name Connect-ExchangeOnline -ErrorAction SilentlyContinue)) {
+
+        Write-ColoredOutput Red "ATTENTION: The required cmdlet 'Connect-ExchangeOnline' is not available.`nRun 'ComplianceUtility -UpdateModules' to install or update the required module, then restart the Compliance Utility.`n"
+        fncLogging -strLogFunction "fncCollectExchangeIRMConfiguration" -strLogDescription "ExchangeOnlineManagement module" -strLogValue "Connect-ExchangeOnline unavailable"
+        Return
+
+    }
+
+    <# Output #>
+    Write-Output "Connecting to Exchange Online..."
+
+    <# Connect/logon to Exchange Online and treat only a terminating error as a failed login #>
+    Try {
+
+        Connect-ExchangeOnline -CommandName Get-IRMConfiguration -ShowBanner:$false -Verbose:$false -ErrorAction Stop -WarningAction SilentlyContinue | Out-Null
+
+        If (-not (Get-Command -Name Get-IRMConfiguration -ErrorAction SilentlyContinue)) {
+            Throw "Get-IRMConfiguration is not available for the connected account. Check the Exchange Online RBAC permissions."
+        }
+
+        <# Output #>
+        Write-Output "Exchange Online connected."
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncCollectExchangeIRMConfiguration" -strLogDescription "Exchange Online connected" -strLogValue $true
+
+    }
+    Catch { <# Action if the Exchange Online connection failed #>
+
+        $Private:ExchangeOnlineError = $_.Exception.Message
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncCollectExchangeIRMConfiguration" -strLogDescription "Exchange Online connected" -strLogValue $false
+        fncLogging -strLogFunction "fncCollectExchangeIRMConfiguration" -strLogDescription "COLLECT EXCHANGE IRM CONFIGURATION" -strLogValue "Connection failed: $Private:ExchangeOnlineError"
+
+        <# Output #>
+        Write-ColoredOutput Red "COLLECT EXCHANGE IRM CONFIGURATION: Connection failed: $Private:ExchangeOnlineError`n"
+
+        <# Action if function was called from command line #>
+        If ($Global:bolComingFromMenu -eq $false) {
+
+            <# Set back window title to default #>
+            $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
+
+            <# Release global variable back to default (updates active) #>
+            $Global:bolSkipRequiredUpdates = $false
+
+            <# Exit #>
+            Return
+
+        }
+
+        <# Action if function was called from the menu #>
+        If ($Global:bolComingFromMenu -eq $true) {
+
+            <# Call Pause #>
+            fncPause
+
+            <# Clear console #>
+            Clear-Host
+
+            <# Call ShowMenu #>
+            fncShowMenu
+
+            Return
+
+        }
+
+    }
+
+    <# Check if COLLECT folder exist and create it, if not #>
+    If ($(Test-Path -Path $Global:strUserLogPath"\Collect\ExchangeIRMConfiguration") -Eq $false) {
+
+        New-Item -ItemType Directory -Force -Path $Global:strUserLogPath"\Collect\ExchangeIRMConfiguration" | Out-Null <# Define Collect path #>
+
+    }
+
+    <# Output #>
+    Write-Output "Collecting Exchange IRM configuration, please wait..."
+
+    $Private:IRMCollectionSucceeded = $true
+
+    <# Check for existing folder #>
+    If ($(Test-Path $Global:strUserLogPath"\Collect\ExchangeIRMConfiguration") -Eq $true) {
+
+        Try {
+
+        <# Collect Exchange IRM configuration once for console and file output #>
+        $Private:IRMConfiguration = Get-IRMConfiguration -WarningAction SilentlyContinue -ErrorAction Stop
+
+        If ($null -eq $Private:IRMConfiguration) {
+            Throw "Get-IRMConfiguration returned no configuration data."
+        }
+        $Private:IRMConfigurationLogPath = Join-Path -Path $Global:strUserLogPath -ChildPath "Collect\ExchangeIRMConfiguration\IRMConfiguration.log"
+
+        <# Export Exchange IRM configuration as CLIXML #>
+        $Private:IRMConfiguration | Export-Clixml -Path $Global:strUserLogPath"\Collect\ExchangeIRMConfiguration\IRMconfiguration.xml" -Force -ErrorAction Stop | Out-Null
+
+        <# Create a readable output similar to Collect AIP Service Configuration #>
+        $Private:IRMTimestamp = Get-Date -Verbose:$false -UFormat "%y%m%d-%H%M%S"
+        $Private:ExchangeOnlineModuleVersion = (Get-Module -ListAvailable -Name ExchangeOnlineManagement | Sort-Object Version -Descending | Select-Object -First 1).Version
+        $Private:IRMOutputLines = @(
+            ("{0,-42}: {1}" -f "Date/Timestamp", $Private:IRMTimestamp)
+            ("{0,-42}: {1}" -f "Module version", $Private:ExchangeOnlineModuleVersion)
+        )
+
+        ForEach ($Private:IRMProperty in $Private:IRMConfiguration.PSObject.Properties) {
+            $Private:IRMPropertyValue = $Private:IRMProperty.Value
+
+            If ($Private:IRMPropertyValue -is [System.Collections.IEnumerable] -and $Private:IRMPropertyValue -isnot [string]) {
+                $Private:IRMPropertyValue = @($Private:IRMPropertyValue | ForEach-Object { [string]$_ }) -join ", "
+            }
+
+            $Private:IRMOutputLines += ("{0,-42}: {1}" -f $Private:IRMProperty.Name, $Private:IRMPropertyValue)
+        }
+
+        Add-Content -Path $Private:IRMConfigurationLogPath -Value $Private:IRMOutputLines
+        Add-Content -Path $Private:IRMConfigurationLogPath -Value ""
+
+        ForEach ($Private:IRMOutputLine in $Private:IRMOutputLines) {
+            Write-ColoredOutput Yellow $Private:IRMOutputLine
+        }
+
+        Write-Output ""
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncCollectExchangeIRMConfiguration" -strLogDescription "Export IRM configuration" -strLogValue "IRMconfiguration.xml"
+        fncLogging -strLogFunction "fncCollectExchangeIRMConfiguration" -strLogDescription "Export readable IRM configuration" -strLogValue "IRMConfiguration.log"
+
+        <# Release private variables #>
+        $Private:IRMConfiguration = $null
+        $Private:IRMConfigurationLogPath = $null
+        $Private:IRMTimestamp = $null
+        $Private:ExchangeOnlineModuleVersion = $null
+        $Private:IRMOutputLines = $null
+        $Private:IRMProperty = $null
+        $Private:IRMPropertyValue = $null
+        $Private:IRMOutputLine = $null
+
+        }
+        Catch {
+            $Private:IRMCollectionSucceeded = $false
+            $Private:IRMCollectionError = $_.Exception.Message
+            fncLogging -strLogFunction "fncCollectExchangeIRMConfiguration" -strLogDescription "Collect IRM configuration failed" -strLogValue $Private:IRMCollectionError
+            Write-ColoredOutput Red "COLLECT EXCHANGE IRM CONFIGURATION: Collection failed: $Private:IRMCollectionError`n"
+        }
+
+    }
+
+    <# Disconnect from Exchange Online #>
+    Disconnect-ExchangeOnline -Confirm:$false | Out-Null
+
+    <# Output #>
+    Write-Output "Exchange Online disconnected.`n"
+
+    If (-not $Private:IRMCollectionSucceeded) {
+        fncLogging -strLogFunction "fncCollectExchangeIRMConfiguration" -strLogDescription "COLLECT EXCHANGE IRM CONFIGURATION" -strLogValue "Failed"
+
+        If ($Global:bolComingFromMenu -eq $false) {
+            $Global:bolSkipRequiredUpdates = $false
+            $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
+        }
+
+        Return
+    }
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectExchangeIRMConfiguration" -strLogDescription "Exchange Online disconnected" -strLogValue $true
+    fncLogging -strLogFunction "fncCollectExchangeIRMConfiguration" -strLogDescription "COLLECT EXCHANGE IRM CONFIGURATION" -strLogValue "Proceeded"
+
+    <# Output #>
+    Write-Output "Log file: $Global:strUserLogPath\Collect\ExchangeIRMConfiguration\IRMConfiguration.log"
+    Write-Output "CLIXML file: $Global:strUserLogPath\Collect\ExchangeIRMConfiguration\IRMconfiguration.xml"
+    Write-ColoredOutput Green "COLLECT EXCHANGE IRM CONFIGURATION: Proceeded.`n"
+
+    <# Action if function was called from command line #>
+    If ($Global:bolComingFromMenu -eq $false) {
+
+        <# Set back window title to default #>
+        $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
+
+        <# Release global variable back to default (updates active) #>
+        $Global:bolSkipRequiredUpdates = $false
+
+        <# Exit #>
+        Return
+
+    }
+
 }
 
 <# Verify certificates issuer #>
@@ -4035,9 +3722,24 @@ Function fncVerifyIssuer ($strCertURL, $strEndpointName, $strLogPath) {
     <# Define variabel for TCP client/SSL stream #>
     $Private:MyClient = $Private:MySSLtream = $null
 
+    <# Do not pass missing endpoint data to TcpClient.Connect #>
+    If ([string]::IsNullOrWhiteSpace([string]$strCertURL)) {
+        Write-ColoredOutput Yellow "Endpoint: $strEndpointName"
+        Write-ColoredOutput Yellow "URL:      Not available"
+        Write-ColoredOutput Yellow "Issuer:   Not verified`n"
+
+        If ($(Test-Path $Global:strUserLogPath"\Collect\EndpointURLs.log") -Eq $true) {
+            Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value "Endpoint: $strEndpointName"
+            Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value "URL:      Not available"
+            Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value "Issuer:   Not verified`n"
+        }
+
+        Return
+    }
+
     <# Try to verify certificates issuer #>
     Try {
-    
+
         <# Create TCP client #>
         $Private:MyClient = New-Object System.Net.Sockets.TcpClient
         $Private:MyClient.ReceiveTimeout = 5000
@@ -4066,7 +3768,7 @@ Function fncVerifyIssuer ($strCertURL, $strEndpointName, $strLogPath) {
         <# Feed variable/certificate data with issuer #>
         $Private:MyWebCert = $Private:MyWebCert.Issuer
 
-        <# Output #> 
+        <# Output #>
         Write-ColoredOutput Yellow "Endpoint: $strEndpointName"
         Write-ColoredOutput Yellow "URL:      https://$strCertURL"
         Write-ColoredOutput Yellow "Issuer:   $Private:MyWebCert`n"
@@ -4082,9 +3784,25 @@ Function fncVerifyIssuer ($strCertURL, $strEndpointName, $strLogPath) {
         }
 
     }
+    Catch {
+
+        $Private:VerificationError = $_.Exception.Message
+        Write-ColoredOutput Yellow "Endpoint: $strEndpointName"
+        Write-ColoredOutput Yellow "URL:      https://$strCertURL"
+        Write-ColoredOutput Yellow "Issuer:   Verification failed ($Private:VerificationError)`n"
+
+        If ($(Test-Path $Global:strUserLogPath"\Collect\EndpointURLs.log") -Eq $true) {
+            Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value "Endpoint: $strEndpointName"
+            Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value "URL:      https://$strCertURL"
+            Add-Content -Path $Global:strUserLogPath"\Collect\EndpointURLs.log" -Value "Issuer:   Verification failed ($Private:VerificationError)`n"
+        }
+
+        fncLogging -strLogFunction "fncVerifyIssuer" -strLogDescription "Certificate verification failed" -strLogValue $Private:VerificationError
+
+    }
     Finally {
 
-        <# Closing SSL streamt #> 
+        <# Closing SSL streamt #>
         If ($Private:MySSLtream) {
             $Private:MySSLtream.Close()
         }
@@ -4101,6 +3819,7 @@ Function fncVerifyIssuer ($strCertURL, $strEndpointName, $strLogPath) {
     $Private:MyCertBinaries = $null
     $Private:MySSLtream= $null
     $Private:MyClient = $null
+    $Private:VerificationError = $null
 
 }
 
@@ -4110,13 +3829,13 @@ Function fncCollectDLPRulesAndPolicies {
     Write-Output "COLLECT DLP RULES AND POLICIES:"
 
     <# Check for admin permissions #>
-    If ($Global:bolRunningPrivileged -eq $false) {
+    If ($Global:bolRunningPrivileged -ne $true) {
 
         <# Output #>
-        Write-ColoredOutput Red "ATTENTION: You must run the 'Compliance Utility' in an administrative PowerShell window as a user with local administrative privileges to continue with this option.`nCOLLECT DLP RULES AND POLICIES: Failed.`n"
+        Write-ColoredOutput Red "ATTENTION: You must run the Compliance Utility in an administrative PowerShell window as a user with local administrative privileges to continue with this option.`nCOLLECT DLP RULES AND POLICIES: Failed.`n"
 
         <# Action if function was called from command line #>
-        If ($Global:bolCommingFromMenu -eq $false) {
+        If ($Global:bolComingFromMenu -eq $false) {
 
             <# Set back window title to default #>
             $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
@@ -4125,204 +3844,16 @@ Function fncCollectDLPRulesAndPolicies {
             $Global:bolSkipRequiredUpdates = $false
 
             <# Exit #>
-            Break
+            Return
 
         }
 
         <# Action if function was called from the menu #>
-        If ($Global:bolCommingFromMenu -eq $true) {
+        If ($Global:bolComingFromMenu -eq $true) {
 
             <# Call Pause #>
             fncPause
 
-            <# Clear console #>
-            Clear-Host
-
-            <# Call ShowMenu #>
-            fncShowMenu    
-
-        }
-
-    }
-
-    <# Output #>
-    Write-Output "Initializing, please wait..."
-
-    <# Logging #>
-    fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "COLLECT DLP RULES AND POLICIES" -strLogValue "Initiated"
-
-    <# Action if SkipUpdates was called from command line #>
-    If ($Global:bolSkipRequiredUpdates -eq $false) {
-
-        <# Detect Windows #>
-        If ([System.Environment]::OSVersion.Platform -eq "Win32NT") { 
-
-            <# Call UpdateRequiredModules only on Windows #>
-            fncUpdateRequiredModules
-
-        }
-        
-        <# Actions if ExchangeOnlineManagement module is installed #>
-        If (Get-Module -ListAvailable -Name "ExchangeOnlineManagement") {
-
-            <# Update ExchangeOnlineManagement, if we can connect to PowerShell Gallery #>
-            If (Find-Module -Name ExchangeOnlineManagement -Repository PSGallery -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) {
-
-                <# Fill variables with version information #>
-                [Version]$Private:strEOPOnlineVersion = (Find-Module -Name ExchangeOnlineManagement -Repository PSGallery).Version
-                [Version]$Private:strEOPLocalVersion = (Get-Module -ListAvailable -Name "AIPService").Version | Select-Object -First 1
-
-                <# Compare local version vs. online version #>
-                If ([Version]::new($Private:strEOPPOnlineVersion.Major, $Private:strEOPPOnlineVersion.Minor, $Private:strEOPPOnlineVersion.Build) -gt [Version]::new($Private:strEOPLocalVersion.Major, $Private:strEOPLocalVersion.Minor, $Private:strEOPLocalVersion.Build) -eq $true) {
-
-                    <# Output #>
-                    Write-Output "Updating Exchange Online Management module, please wait..."
-
-                    <# Update AIPService PowerShell module #>
-                    Update-Module -Verbose:$false -Name ExchangeOnlineManagement -Force -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
-
-                    <# Logging #>
-                    fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "ExchangeOnlineManagement module" -strLogValue "Updated"
-
-                }
-
-                <# Release private variables #>
-                [Version]$Private:strEOPOnlineVersion = $null
-                [Version]$Private:strEOPLocalVersion = $null
-
-            }
-            Else { <# Actions if we can't connect to PowerShell Gallery (no internet connection) #>
-
-                <# Logging #>
-                fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "ExchangeOnlineManagement module update" -strLogValue "Failed"
-
-            }
-
-        }
-
-    }
-
-    <# Actions if ExchangeOnlineManagement module isn't installed #>
-    If (-Not (Get-Module -ListAvailable -Name "ExchangeOnlineManagement")) {
-
-        <# Install ExchangeOnlineManagement if we can connect to PowerShell Gallery #>
-        If (Find-Module -Name ExchangeOnlineManagement -Repository PSGallery -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) {
-
-            <# Output #>
-            Write-Output "Installing Exchange Online Management module, please wait..."
-
-            <# Install ExchangeOnlineManagement PowerShell module #>
-            Install-Module -Verbose:$false -Name ExchangeOnlineManagement -Scope CurrentUser -Repository PSGallery -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "ExchangeOnlineManagement module" -strLogValue "Installed"
-
-            <# Output #>
-            Write-Output "Exchange Online Management module installed."
-            Write-ColoredOutput Red "ATTENTION: To use the Exchange Online Management module, you must close this window and run a new instance of PowerShell for it to work.`nThe 'Compliance Utility' is now terminated."
-
-            <# Release global variable back to default (updates active) #>
-            $Global:bolSkipRequiredUpdates = $false
-
-            <# Call Pause #>
-            fncPause
-    
-            <# Set back window title to default #>
-            $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
-
-            <# Interrupting, because of module not loaded into PowerShell instance #>
-            Break
-
-        }
-        Else { <# Actions if we can't connect to PowerShell Gallery (no internet connection) #>
-
-            <# Output #>
-            Write-ColoredOutput Red "ATTENTION: Collecting DLP rules and policies could not be performed.`nEither PowerShell Gallery cannot be reached or there is no connection to the Internet.`n`nYou must have the Exchange Online Management module installed to proceed.`n`nPlease check the following website and install the latest version of the Exchange Online Management module:`nhttps://www.powershellgallery.com/packages/ExchangeOnlineManagement`n"
-
-            <# Output #>
-            Write-ColoredOutput Red "COLLECT DLP RULES AND POLICIES: Failed.`n"
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "ExchangeOnlineManagement module installation" -strLogValue "Failed"
-
-            <# Action if function was called from command line #>
-            If ($Global:bolCommingFromMenu -eq $false) {
-   
-                <# Release global variable back to default (updates active) #>
-                $Global:bolSkipRequiredUpdates = $false
-
-                <# Set back window title to default #>
-                $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
-
-                <# Interrupt, because of missing internet connection #>
-                Break
-
-            }
-
-            <# Action if function was called from the menu #>
-            If ($Global:bolCommingFromMenu -eq $true) {
-
-                <# Call Pause #>
-                fncPause
-    
-                <# Clear console #>
-                Clear-Host
-
-                <# Call ShowMenu #>
-                fncShowMenu
-
-            }
-
-        }
-
-    }
-
-    <# Logging #>
-    fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "ExchangeOnlineManagement module version" -strLogValue (Get-Module -Verbose:$false -ListAvailable -Name ExchangeOnlineManagement).Version
-
-    <# Output #>
-    Write-Output "Connecting to Microsoft Purview compliance portal..."
-
-    <# Remember default progress bar status: "Continue" #>
-    $Private:strOriginalPreference = $Global:ProgressPreference 
-    $Global:ProgressPreference = "SilentlyContinue" <# Hiding progress bar #>
-
-    <# Try to connect/logon #>
-    Try {
-
-        <# Connect to Microsoft Purview compliance portal #>
-        Connect-IPPSSession -Verbose:$false -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
-
-    }
-    Catch { <# Catch for any error #>
-
-        <# Logging #>
-        fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "Microsoft Purview compliance portal connected" -strLogValue $false 
-        fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "Microsoft Purview compliance portal" -strLogValue "Login failed"
-    
-        <# Output #>
-        Write-ColoredOutput Red "COLLECT DLP RULES AND POLICIES: Login failed. Please try again.`n"
-
-        <# Action if function was called from command line #>
-        If ($Global:bolCommingFromMenu -eq $false) {
-
-            <# Release global variable back to default (updates active) #>
-            $Global:bolSkipRequiredUpdates = $false           
-
-            <# Set back window title to default #>
-            $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
-
-            <# Interrupt, because of missing internet connection #>
-            Break
-
-        }
-
-        <# Action if function was called from the menu #>
-        If ($Global:bolCommingFromMenu -eq $true) {
-
-            <# Call Pause #>
-            fncPause
-    
             <# Clear console #>
             Clear-Host
 
@@ -4333,14 +3864,89 @@ Function fncCollectDLPRulesAndPolicies {
 
     }
 
-    <# Output #> 
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "COLLECT DLP RULES AND POLICIES" -strLogValue "Initiated"
+
+    If (-not (fncTestRequiredModule -strModuleName "ExchangeOnlineManagement")) { Return }
+
+    If (-not (Get-Command -Name Connect-IPPSSession -ErrorAction SilentlyContinue)) {
+        Write-ColoredOutput Red "ATTENTION: The required cmdlet 'Connect-IPPSSession' is not available.`nRun 'ComplianceUtility -UpdateModules' to install or update the required module, then restart the Compliance Utility.`n"
+        fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "ExchangeOnlineManagement module" -strLogValue "Connect-IPPSSession unavailable"
+        Return
+    }
+
+    <# Logging #>
+    fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "ExchangeOnlineManagement module version" -strLogValue (Get-Module -Verbose:$false -ListAvailable -Name ExchangeOnlineManagement).Version
+
+    <# Output #>
+    Write-Output "Connecting to Microsoft Purview compliance portal..."
+
+    <# Remember default progress bar status: "Continue" #>
+    $Private:strOriginalPreference = $Global:ProgressPreference
+    $Global:ProgressPreference = "SilentlyContinue" <# Hiding progress bar #>
+
+    <# Try to connect/logon #>
+    Try {
+
+        <# Connect to Microsoft Purview compliance portal #>
+        Connect-IPPSSession -ShowBanner:$false -Verbose:$false -WarningAction SilentlyContinue -ErrorAction Stop | Out-Null
+
+    }
+    Catch { <# Catch for any error #>
+
+        $Private:PurviewConnectionError = $_.Exception.Message
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "Microsoft Purview compliance portal connected" -strLogValue $false
+        fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "Microsoft Purview compliance portal" -strLogValue "Login failed: $Private:PurviewConnectionError"
+
+        <# Output #>
+        Write-ColoredOutput Red "COLLECT DLP RULES AND POLICIES: Login failed: $Private:PurviewConnectionError`n"
+
+        $Global:ProgressPreference = $Private:strOriginalPreference
+
+        <# Action if function was called from command line #>
+        If ($Global:bolComingFromMenu -eq $false) {
+
+            <# Release global variable back to default (updates active) #>
+            $Global:bolSkipRequiredUpdates = $false
+
+            <# Set back window title to default #>
+            $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
+
+            <# Interrupt, because of missing internet connection #>
+            Return
+
+        }
+
+        <# Action if function was called from the menu #>
+        If ($Global:bolComingFromMenu -eq $true) {
+
+            <# Call Pause #>
+            fncPause
+
+            <# Clear console #>
+            Clear-Host
+
+            <# Call ShowMenu #>
+            fncShowMenu
+
+            Return
+
+        }
+
+        Return
+
+    }
+
+    <# Output #>
     Write-Output "Microsoft Purview compliance portal connected."
 
     <# Logging #>
     fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "Microsoft Purview compliance portal connected" -strLogValue $true
 
-    <# Output #> 
-    Write-Output "Collecting DLP rules and policies, please wait..."
+    <# Output #>
+    Write-Output "Collecting DLP rules and policies. Please wait, this may take a while..."
 
     <# Check if COLLECT\DLPRulesAndPolicies folder exist #>
     If ($(Test-Path -Path $Global:strUserLogPath"\Collect\DLPRulesAndPolicies") -Eq $false) {
@@ -4352,7 +3958,7 @@ Function fncCollectDLPRulesAndPolicies {
     <# Collecting DLP policies #>
     Get-DlpCompliancePolicy -WarningAction SilentlyContinue | Export-Clixml -Path $Global:strUserLogPath"\Collect\DLPRulesAndPolicies\DlpPolicy.xml" | Out-Null
     fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "Export DLP rules and policy" -strLogValue "DlpPolicy.xml" <# Logging #>
-    
+
     <# Collecting DLP rules #>
     Get-DlpComplianceRule -WarningAction SilentlyContinue | Select-Object -Property * -ExcludeProperty SerializationData | Format-List | Export-Clixml -Path $Global:strUserLogPath"\Collect\DLPRulesAndPolicies\DlpRule.xml" | Out-Null
     fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "Export DLP rules and policy" -strLogValue "DlpRule.xml" <# Logging #>
@@ -4360,7 +3966,7 @@ Function fncCollectDLPRulesAndPolicies {
     <# Collecting DLP distribution status #>
     Get-DlpCompliancePolicy | ForEach-Object {Get-DLPcompliancePolicy -Identity $_.Identity -DistributionDetail} | Format-List Name,GUID,Distr* | Export-Clixml -Path $Global:strUserLogPath"\Collect\DLPRulesAndPolicies\DlpPolicyDistributionStatus.xml" | Out-Null
     fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "Export DLP rules and policy" -strLogValue "DlpPolicyDistributionStatus.xml" <# Logging #>
- 
+
     <# Collecting DLP sensitive information types #>
     Get-DlpSensitiveInformationType | Select-Object -Property * | Export-Clixml -Path $Global:strUserLogPath"\Collect\DLPRulesAndPolicies\DlpSensitiveInformationType.xml" | Out-Null
     fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "Export DLP rules and policy" -strLogValue "DlpSensitiveInformationType.xml" <# Logging #>
@@ -4390,245 +3996,221 @@ Function fncCollectDLPRulesAndPolicies {
     fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "Microsoft Purview compliance portal disconnected" -strLogValue $true
     fncLogging -strLogFunction "fncCollectDLPRulesAndPolicies" -strLogDescription "COLLECT DLP RULES AND POLICIES" -strLogValue "Proceeded"
 
-    <# Output on macOS #>
-    If ($IsMacOS -eq $true) {
-
-        Write-Output "`nLog folder: $Global:strUserLogPath/Collect/DLPRulesAndPolicies"
-
-    }
-
-    <# Output on Windows #>
-    If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
-
-        Write-Output "`nLog folder: $Global:strUserLogPath\Collect\DLPRulesAndPolicies"
-
-    }
+    <# Output #>
+    Write-Output "`nLog folder: $Global:strUserLogPath\Collect\DLPRulesAndPolicies"
 
     <# Output #>
     Write-ColoredOutput Green "COLLECT DLP RULES AND POLICIES: Proceeded.`n"
 
     <# Action if function was called from command line #>
-    If ($Global:bolCommingFromMenu -eq $false) {
+    If ($Global:bolComingFromMenu -eq $false) {
 
         <# Release global variable back to default (updates active) #>
-        $Global:bolSkipRequiredUpdates = $false        
+        $Global:bolSkipRequiredUpdates = $false
 
         <# Set back window title to default #>
         $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
 
         <# Interrupt, because of missing internet connection #>
-        Break
+        Return
 
     }
-
-    <# Action if function was called from the menu #>
-    If ($Global:bolCommingFromMenu -eq $true) {
-
-        <# Call Pause #>
-        fncPause
-    
-        <# Clear console #>
-        Clear-Host
-
-        <# Call ShowMenu #>
-        fncShowMenu
-
-    }    
 
 }
 
 Function fncCollectUserLiceneseDetails {
 
-    <# Output #>
-    Write-Output "COLLECT USER LICENSE DETAILS:"
+    <# Isolate Microsoft Graph from assemblies already loaded in the current PowerShell process #>
+    If ($env:COMPLIANCEUTILITY_GRAPH_CHILD -ne "1") {
+
+        $Private:GraphModulePath = $MyInvocation.MyCommand.Module.Path
+        If ($PSVersionTable.PSEdition -eq "Core") {
+            $Private:GraphPowerShellPath = Join-Path -Path $PSHOME -ChildPath "pwsh.exe"
+        }
+        Else {
+            $Private:GraphPowerShellPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+        }
+
+        If ([string]::IsNullOrWhiteSpace($Private:GraphModulePath) -or -not (Test-Path -LiteralPath $Private:GraphModulePath)) {
+            Write-ColoredOutput Red "COLLECT USER LICENSE DETAILS: Unable to determine the Compliance Utility module path for the isolated Graph process.`n"
+            Return
+        }
+
+        $Private:GraphChildCommand = @'
+
+<# Run Microsoft Graph collection in an isolated Windows PowerShell process to prevent module and assembly conflicts #>
+$ErrorActionPreference = "Stop"
+
+Try {
+    Import-Module -Name $env:COMPLIANCEUTILITY_GRAPH_MODULE_PATH -Force -ErrorAction Stop
+
+    $Global:strUserLogPath = $env:COMPLIANCEUTILITY_GRAPH_LOG_PATH
+    $Global:bolComingFromMenu = $false
+    $Global:bolSkipRequiredUpdates = $true
+    $Global:strDefaultWindowTitle = $Host.UI.RawUI.WindowTitle
+
+    $module = Get-Module -Name ComplianceUtility | Where-Object { $_.Path -eq $env:COMPLIANCEUTILITY_GRAPH_MODULE_PATH } | Select-Object -First 1
+    If (-not $module) {
+        Throw "The Compliance Utility module could not be loaded in the isolated Graph process."
+    }
+
+    & $module { fncCollectUserLiceneseDetails }
+}
+Catch {
+    Write-Error "Isolated Microsoft Graph collection failed: $($_.Exception.Message)"
+    Exit 1
+}
+'@
+
+        $Private:GraphChildEncodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Private:GraphChildCommand))
+        $Private:GraphProcessStartInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $Private:GraphProcessStartInfo.FileName = $Private:GraphPowerShellPath
+        $Private:GraphProcessStartInfo.Arguments = "-NoLogo -NoProfile -ExecutionPolicy RemoteSigned -EncodedCommand $Private:GraphChildEncodedCommand"
+        $Private:GraphProcessStartInfo.UseShellExecute = $false
+        $Private:GraphProcessStartInfo.CreateNoWindow = $false
+        $Private:GraphProcessStartInfo.EnvironmentVariables["COMPLIANCEUTILITY_GRAPH_CHILD"] = "1"
+        $Private:GraphProcessStartInfo.EnvironmentVariables["COMPLIANCEUTILITY_GRAPH_MODULE_PATH"] = $Private:GraphModulePath
+        $Private:GraphProcessStartInfo.EnvironmentVariables["COMPLIANCEUTILITY_GRAPH_LOG_PATH"] = [string]$Global:strUserLogPath
+
+        Try {
+            $Private:GraphProcess = [System.Diagnostics.Process]::Start($Private:GraphProcessStartInfo)
+            $Private:GraphProcess.WaitForExit()
+
+            If ($Private:GraphProcess.ExitCode -ne 0) {
+                Throw "The isolated Microsoft Graph process exited with code $($Private:GraphProcess.ExitCode)."
+            }
+        }
+        Catch {
+            Write-ColoredOutput Red "COLLECT USER LICENSE DETAILS: Isolated Microsoft Graph collection failed: $($_.Exception.Message)`n"
+        }
+
+        If ($Global:bolComingFromMenu -eq $true) {
+            fncPause
+            Clear-Host
+            fncShowMenu
+        }
+        Else {
+            $Global:bolSkipRequiredUpdates = $false
+            $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
+        }
+
+        Return
+    }
 
     <# Output #>
-    Write-Output "Initializing, please wait..."
+    Write-Output "COLLECT USER LICENSE DETAILS:"
 
     <# Logging #>
     fncLogging -strLogFunction "fncCollectUserLiceneseDetails" -strLogDescription "COLLECT USER LICENSE DETAILS" -strLogValue "Initiated"
 
-    <# Action if SkipUpdates was called from command line #>
-    If ($Global:bolSkipRequiredUpdates -eq $false) {
-
-        <# Actions if Microsoft Graph module is installed #>
-        If (Get-Module -ListAvailable -Name "Microsoft.Graph") {
-
-            <# Update Microsoft Graph, if we can connect to PowerShell Gallery #>
-            If (Find-Module -Name Microsoft.Graph -Repository PSGallery -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) {
-
-                <# Fill variables with version information #>
-                [Version]$Private:strGraphOnlineVersion = (Find-Module -Name Microsoft.Graph -Repository PSGallery).Version
-                [Version]$Private:strGraphLocalVersion = (Get-Module -ListAvailable -Name "Microsoft.Graph").Version | Select-Object -First 1
-
-                <# Compare local version vs. online version #>
-                If ([Version]::new($Private:strGraphOnlineVersion.Major, $Private:strGraphOnlineVersion.Minor, $Private:strGraphOnlineVersion.Build) -gt [Version]::new($Private:strGraphLocalVersion.Major, $Private:strGraphLocalVersion.Minor, $Private:strGraphLocalVersion.Build) -eq $true) {
-
-                    <# Output #>
-                    Write-Output "Updating Microsoft Graph PowerShell module, please wait..."
-
-                    <# Update Microsoft Graph PowerShell module #>
-                    Update-Module -Verbose:$false -Name Microsoft.Graph -Force -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
-
-                    <# Logging #>
-                    fncLogging -strLogFunction "fncCollectUserLiceneseDetails" -strLogDescription "Microsoft Graph PowerShell module" -strLogValue "Updated"
-
-                }
-
-                <# Release private variables #>
-                [Version]$Private:strGraphOnlineVersion = $null
-                [Version]$Private:strGraphLocalVersion = $null
-
-            }
-            Else { <# Actions if we can't connect to PowerShell Gallery (no internet connection) #>
-
-                <# Logging #>
-                fncLogging -strLogFunction "fncCollectUserLiceneseDetails" -strLogDescription "Microsoft Graph PowerShell modules update" -strLogValue "Failed"
-
-            }
-
-        }
-
-    }
-
-    <# Actions if Microsof Graph module isn't installed #>
-    If (-Not (Get-Module -ListAvailable -Name "Microsoft.Graph")) {
-
-        <# Install Microsoft Graph if we can connect to PowerShell Gallery #>
-        If (Find-Module -Name Microsoft.Graph -Repository PSGallery -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) {
-
-            <# Output #>
-            Write-Output "Installing Microsoft Graph PowerShell module, please wait..."
-
-            <# Install Microsoft Graph PowerShell module #>
-            Install-Module -Verbose:$false -Name Microsoft.Graph -Scope CurrentUser -Repository PSGallery -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectUserLiceneseDetails" -strLogDescription "Microsoft Graph PowerShell module" -strLogValue "Installed"
-
-            <# Output #>
-            Write-Output "Microsoft Graph PowerShell modules installed."
-            Write-ColoredOutput Red "ATTENTION: To use the Graph PowerShell module, you must close this window and run a new instance of PowerShell for it to work.`nThe 'Compliance Utility' is now terminated."
-
-            <# Release global variable back to default (updates active) #>
-            $Global:bolSkipRequiredUpdates = $false
-
-            <# Call Pause #>
-            fncPause
-    
-            <# Set back window title to default #>
-            $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
-
-            <# Interrupting, because of module not loaded into PowerShell instance #>
-            Break
-
-        }
-        Else { <# Actions if we can't connect to PowerShell Gallery (no internet connection) #>
-
-            <# Output #>
-            Write-ColoredOutput Red "ATTENTION: Collecting user license details could not be performed.`nEither PowerShell Gallery cannot be reached or there is no connection to the Internet.`n`nYou must have Microsoft Graph PowerShell modules installed to proceed.`n`nPlease check the following website and install the latest version of the Microsoft Graph modul:`nhttps://www.powershellgallery.com/packages/Microsoft.Graph`n"
-
-            <# Output #>
-            Write-ColoredOutput Red "COLLECT USER LICENSE DETAILS: Failed.`n"
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncCollectUserLiceneseDetails" -strLogDescription "Microsoft Graph PowerShell module installation" -strLogValue "Failed"
-
-            <# Action if function was called from the menu #>
-            If ($Global:bolCommingFromMenu -eq $true) {
-
-                <# Call Pause #>
-                fncPause
-    
-                <# Clear console #>
-                Clear-Host
-
-                <# Call ShowMenu #>
-                fncShowMenu
-
-            }
-
-            <# Action if function was called from command line #>
-            If ($Global:bolCommingFromMenu -eq $false) {
-   
-                <# Release global variable back to default (updates active) #>
-                $Global:bolSkipRequiredUpdates = $false
-
-                <# Set back window title to default #>
-                $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
-
-                <# Interrupt, because of missing internet connection #>
-                Break
-
-            }
-
-        }
-
-    }
+    If (-not (fncTestRequiredModule -strModuleName "Microsoft.Graph")) { Return }
 
     <# Logging #>
     fncLogging -strLogFunction "fncCollectUserLiceneseDetails" -strLogDescription "Microsoft Graph PowerShell module version" -strLogValue (Get-Module -Verbose:$false -ListAvailable -Name Microsoft.Graph).Version
 
     <# Output #>
     Write-Output "Connecting to Microsoft Graph..."
-    
+
     <# Remember default progress bar status: "Continue" #>
-    $Private:strOriginalPreference = $Global:ProgressPreference 
+    $Private:strOriginalPreference = $Global:ProgressPreference
     $Global:ProgressPreference = "SilentlyContinue" <# Hiding progress bar #>
 
-    <# Try to connect/logon to compliance center #>
+    <# Try to connect/logon to Microsoft Graph #>
     Try {
 
+        <# PowerShell 5.1 with the default Restricted policy blocks the signed Graph format data #>
+        $Private:OriginalProcessExecutionPolicy = Get-ExecutionPolicy -Scope Process
+        $Private:GraphImportPolicyChanged = $false
+
+        Try {
+            If ((Get-ExecutionPolicy) -eq "Restricted") {
+                Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned -Force -ErrorAction Stop
+                $Private:GraphImportPolicyChanged = $true
+            }
+
+            <# Import the required Graph submodules explicitly so load errors are caught here #>
+            Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+            Import-Module Microsoft.Graph.Users -ErrorAction Stop
+            Import-Module Microsoft.Graph.Identity.DirectoryManagement -ErrorAction Stop
+        }
+        Finally {
+            If ($Private:GraphImportPolicyChanged) {
+                Set-ExecutionPolicy -Scope Process -ExecutionPolicy $Private:OriginalProcessExecutionPolicy -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         <# Connect/logon to Microsoft Graph #>
-        Connect-Graph -Verbose:$false -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
+        Connect-MgGraph -Scopes "User.Read", "LicenseAssignment.Read.All" -ContextScope Process -Verbose:$false -WarningAction SilentlyContinue -ErrorAction Stop | Out-Null
+
+        <# Resolve the signed-in user explicitly; the Account property in Get-MgContext can be empty #>
+        $Private:GraphUser = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/me?`$select=id,userPrincipalName" -ErrorAction Stop
+
+        If ([string]::IsNullOrWhiteSpace([string]$Private:GraphUser.id)) {
+            Throw "Microsoft Graph returned no user ID for the signed-in account."
+        }
 
     }
     Catch { <# Catch action for any error that occur on connect/logon #>
 
+        $Private:GraphConnectionError = $_.Exception.Message
+
         <# Logging #>
-        fncLogging -strLogFunction "fncCollectUserLiceneseDetails" -strLogDescription "Microsoft Graph connected" -strLogValue $false 
-        fncLogging -strLogFunction "fncCollectUserLiceneseDetails" -strLogDescription "Microsoft Graph" -strLogValue "Login failed"
-    
+        fncLogging -strLogFunction "fncCollectUserLiceneseDetails" -strLogDescription "Microsoft Graph connected" -strLogValue $false
+        fncLogging -strLogFunction "fncCollectUserLiceneseDetails" -strLogDescription "Microsoft Graph" -strLogValue "Connection failed: $Private:GraphConnectionError"
+
         <# Output #>
-        Write-ColoredOutput Red "COLLECT USER LICENSE DETAILS: Login failed. Please try again.`n"
+        Write-ColoredOutput Red "COLLECT USER LICENSE DETAILS: Microsoft Graph connection failed: $Private:GraphConnectionError`n"
+
+        <# Set back progress bar to previous default #>
+        $Global:ProgressPreference = $Private:strOriginalPreference
+
+        <# Close a partially established Graph session if the authentication module was loaded #>
+        If (Get-Command -Name Disconnect-MgGraph -ErrorAction SilentlyContinue) {
+            Disconnect-MgGraph -Verbose:$false -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
+        }
 
         <# Action if function was called from the menu #>
-        If ($Global:bolCommingFromMenu -eq $true) {
+        If ($Global:bolComingFromMenu -eq $true) {
 
             <# Call Pause #>
             fncPause
-    
+
             <# Clear console #>
             Clear-Host
 
             <# Call ShowMenu #>
             fncShowMenu
 
+            Return
+
         }
 
         <# Action if function was called from command line #>
-        If ($Global:bolCommingFromMenu -eq $false) {
+        If ($Global:bolComingFromMenu -eq $false) {
 
             <# Release global variable back to default (updates active) #>
-            $Global:bolSkipRequiredUpdates = $false           
+            $Global:bolSkipRequiredUpdates = $false
 
             <# Set back window title to default #>
             $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
 
-            <# Interrupt, because of missing internet connection #>
-            Break
+            <# Interrupt, because the Microsoft Graph connection failed #>
+            Return
 
         }
 
+        <# Never continue collecting data after a Graph connection or module import failure #>
+        Return
+
     }
 
-    <# Output #> 
+    <# Output #>
     Write-Output "Microsoft Graph connected."
 
     <# Logging #>
     fncLogging -strLogFunction "fncCollectUserLiceneseDetails" -strLogDescription "Microsoft Graph connected" -strLogValue $true
 
-    <# Output #> 
+    <# Output #>
     Write-Output "Collecting user license details, please wait..."
 
     <# Check if COLLECT folder exist and create it, if not #>
@@ -4647,33 +4229,60 @@ Function fncCollectUserLiceneseDetails {
     }
 
     <# Check for existing UserLicenseDetails.log file and extend it #>
+    $Private:GraphCollectionSucceeded = $true
+
     If ($(Test-Path $Global:strUserLogPath"\Collect\UserLicenseDetails.log") -Eq $true) {
 
-        <# Defining private variable; getting UPN from connected session #>
-        $Private:strGraphAccountUPN = Get-MgContext | Select-Object -ExpandProperty Account
+        Try {
+
+        <# Use the user resolved via Microsoft Graph instead of the potentially empty context Account property #>
+        $Private:strGraphAccountUPN = $Private:GraphUser.userPrincipalName
+
+        If ([string]::IsNullOrWhiteSpace([string]$Private:strGraphAccountUPN)) {
+            $Private:strGraphAccountUPN = $Private:GraphUser.id
+        }
 
         <# Log UPN into log file as seperator #>
         Add-Content -Path $Global:strUserLogPath"\Collect\UserLicenseDetails.log" -Value "ACCOUNT: $Private:strGraphAccountUPN`n"
-        
+
         <# Collecting user license details #>
-        Get-MgUserLicenseDetail -UserId $Private:strGraphAccountUPN -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Format-Table -AutoSize | Out-File $Global:strUserLogPath"\Collect\UserLicenseDetails.log" -Encoding UTF8 -Append -Force
+        $Private:GraphUserLicenseDetails = @(Get-MgUserLicenseDetail -UserId $Private:GraphUser.id -ErrorAction Stop -WarningAction SilentlyContinue)
+        $Private:GraphUserLicenseDetails | Format-Table -AutoSize | Out-File $Global:strUserLogPath"\Collect\UserLicenseDetails.log" -Encoding UTF8 -Append -Force
 
         <# Collecting user service plan details #>
-        (Get-MgUserLicenseDetail -UserId $Private:strGraphAccountUPN -ErrorAction SilentlyContinue -WarningAction SilentlyContinue).ServicePlans | Out-File $Global:strUserLogPath"\Collect\UserLicenseDetails.log" -Encoding UTF8 -Append -Force
+        $Private:GraphUserLicenseDetails.ServicePlans | Out-File $Global:strUserLogPath"\Collect\UserLicenseDetails.log" -Encoding UTF8 -Append -Force
 
         <# Collecting subscribed Skus - if required authorization/rule exist #>
-        Get-MgSubscribedSku -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Format-List | Out-File $Global:strUserLogPath"\Collect\UserLicenseDetails.log" -Encoding UTF8 -Append -Force
+        Get-MgSubscribedSku -ErrorAction Stop -WarningAction SilentlyContinue | Format-List | Out-File $Global:strUserLogPath"\Collect\UserLicenseDetails.log" -Encoding UTF8 -Append -Force
 
         <# Releasing private variable #>
         $Private:strGraphAccountUPN = $null
+        $Private:GraphUserLicenseDetails = $null
+
+        }
+        Catch {
+            $Private:GraphCollectionSucceeded = $false
+            $Private:GraphCollectionError = $_.Exception.Message
+            fncLogging -strLogFunction "fncCollectUserLiceneseDetails" -strLogDescription "Collect user license details failed" -strLogValue $Private:GraphCollectionError
+            Write-ColoredOutput Red "COLLECT USER LICENSE DETAILS: Collection failed: $Private:GraphCollectionError`n"
+        }
 
     }
 
     <# Disconnect Microsoft Graph #>
-    Disconnect-Graph -Verbose:$false -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
+    Disconnect-MgGraph -Verbose:$false -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
+
+    <# Release Graph connection data #>
+    $Private:GraphUser = $null
+    $Private:GraphConnectionError = $null
 
     <# Set back progress bar to previous default #>
     $Global:ProgressPreference = $Private:strOriginalPreference
+
+    If (-not $Private:GraphCollectionSucceeded) {
+        fncLogging -strLogFunction "fncCollectUserLiceneseDetails" -strLogDescription "COLLECT USER LICENSE DETAILS" -strLogValue "Failed"
+        Return
+    }
 
     <# Output #>
     Write-Output "Microsoft Graph disconnected."
@@ -4683,113 +4292,23 @@ Function fncCollectUserLiceneseDetails {
     fncLogging -strLogFunction "fncCollectUserLiceneseDetails" -strLogDescription "Export user license details" -strLogValue "UserLicenseDetails.log"
     fncLogging -strLogFunction "fncCollectUserLiceneseDetails" -strLogDescription "COLLECT USER LICENSE DETAILS" -strLogValue "Proceeded"
 
-    <# Output on macOS #>
-    If ($IsMacOS -eq $true) {
+    <# Output #>
+    Write-Output "`nLog file: $Global:strUserLogPath\Collect\UserLicenseDetails.log"
 
-        Write-Output "`nLog file: $Global:strUserLogPath/Collect/UserLicenseDetails.log"
-
-    }
-
-    <# Output on Windows #>
-    If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
-
-        Write-Output "`nLog file: $Global:strUserLogPath\Collect\UserLicenseDetails.log"
-
-    }
-    
     <# Output #>
     Write-ColoredOutput Green "COLLECT USER LICENSE DETAILS: Proceeded.`n"
 
-    <# Action if function was called from the menu #>
-    If ($Global:bolCommingFromMenu -eq $true) {
-
-        <# Call Pause #>
-        fncPause
-    
-        <# Clear console #>
-        Clear-Host
-
-        <# Call ShowMenu #>
-        fncShowMenu
-
-    }
-
     <# Action if function was called from command line #>
-    If ($Global:bolCommingFromMenu -eq $false) {
+    If ($Global:bolComingFromMenu -eq $false) {
 
         <# Release global variable back to default (updates active) #>
-        $Global:bolSkipRequiredUpdates = $false        
+        $Global:bolSkipRequiredUpdates = $false
 
         <# Set back window title to default #>
         $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
 
         <# Interrupt, because of missing internet connection #>
-        Break
-
-    }
-
-}
-
-Function fncRemoveUnifiedLabelingSupportTool {
-
-    <# Detect and try to remove previous versions of Unified Labeling Support Tool#>
-    Try {
-
-        <# Remove UnifiedLabelingSupportTool only if an existing folder was found #>
-        If (Get-Module -Name UnifiedLabelingSupportTool -ListAvailable -ErrorAction SilentlyContinue -WarningAction SilentlyContinue) {
-
-            <# Detect Windows for manual removal #>
-            If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
-
-                <# Output #>
-                Write-Host "Removing Unified Labeling Support Tool, please wait..."
-
-                <# Actions on PowerShell Desktop (5.1) #>
-                If ($PSVersionTable.PSEdition.ToString() -eq "Desktop") {
-                        
-                    <# Variable for Desktop #>
-                    $Private:strToolDesktopPath | Out-Null
-                    $Private:strToolDesktopPath = [Environment]::GetFolderPath("MyDocuments") + "\WindowsPowerShell\Modules\UnifiedLabelingSupportTool"
-
-                    <# Detect path #>
-                    If ($(Test-Path -Path $Private:strToolDesktopPath) -Eq $true) {
-
-                        <# Remove folder/content #>
-                        Remove-Item -LiteralPath $Private:strToolDesktopPath -Force -Recurse -ErrorAction Stop | Out-Null
-                    
-                    }
-
-                }
-
-                <# Actions on PowerShell Core (7.x) #>
-                If ($PSVersionTable.PSEdition.ToString() -eq "Core") {
-            
-                    <# Variable for Core #>
-                    $Private:strToolCorePath | Out-Null
-                    $Private:strToolCorePath = [Environment]::GetFolderPath("MyDocuments") + "\PowerShell\Modules\UnifiedLabelingSupportTool"
-
-                    <# Detect path #>
-                    If ($(Test-Path -Path $Private:strToolCorePath) -Eq $true) {
-
-                        <# Remove folder/content #>
-                        Remove-Item -LiteralPath $Private:strToolCorePath -Force -Recurse -ErrorAction Stop | Out-Null
-                    
-                    }
-
-                }
-
-            }
-
-            <# Logging #>
-            fncLogging -strLogFunction "fncRemovePreviousVersions" -strLogDescription "UnifiedLabelingSupportTool" -strLogValue "Removed"
-
-        }            
-
-    }
-    Catch {
-
-        <# Logging #>
-        fncLogging -strLogFunction "fncRemovePreviousVersions" -strLogDescription "UnifiedLabelingSupportTool" -strLogValue "Removal failed"
+        Return
 
     }
 
@@ -4797,24 +4316,11 @@ Function fncRemoveUnifiedLabelingSupportTool {
 
 Function fncCompressLogs {
 
-    <# Output #> 
+    <# Output #>
     Write-Output "COMPRESS LOGS:`nCompressing logs, please wait...`n"
 
     <# Define default zip folder path #>
-    If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
-
-        <# Define default zip folder path for Windows #>
-        $Global:strZipSourcePath = $Global:strTempFolder + "\ComplianceUtility"
-
-    }
-
-    <# Define default zip folder path for macOS #>
-    If ($IsMacOS -eq $true) {
-
-        <# Define default zip folder path for macOS #>
-        $Global:strZipSourcePath = $Global:strUserLogPath
-
-    }
+    $Global:strZipSourcePath = $Global:strTempFolder + "\ComplianceUtility"
 
     <# Logging #>
     fncLogging -strLogFunction "fncCompressLogs" -strLogDescription "COMPRESS LOGS" -strLogValue "Initiated"
@@ -4839,21 +4345,10 @@ Function fncCompressLogs {
 
     }
 
-    <# Output on macOS #>
-    If ($IsMacOS -eq $true) {
+    <# Output #>
+    Write-Output "Zip file: $Private:DesktopPath\$Private:strZipFile"
 
-        Write-Output "Zip file: $Private:DesktopPath/$Private:strZipFile"
-
-    }
-
-    <# Output on Windows #>
-    If ([System.Environment]::OSVersion.Platform -eq "Win32NT") {
-
-        Write-Output "Zip file: $Private:DesktopPath\$Private:strZipFile"
-
-    }
-
-    <# Output #> 
+    <# Output #>
     Write-ColoredOutput Green "COMPRESS LOGS: Proceeded.`n"
 
     <# Clean Logs folders if .zip archive is on the desktop #>
@@ -4898,7 +4393,7 @@ Function fncPause {
     }
     Else { <# Actions if running in PowerShell command window #>
 
-        <# Output #> 
+        <# Output #>
         Write-ColoredOutput Yellow $Private:strPauseMessage
         $Private:strValue = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
@@ -4915,11 +4410,11 @@ Function fncShowMenu {
     Clear-Host
 
     <# Define variables #>
-    $Global:bolCommingFromMenu | Out-Null
+    $Global:bolComingFromMenu | Out-Null
     $Global:bolSkipRequiredUpdates | Out-Null
 
     <# Helper variable to control menu handling inside function calls #>
-    $Global:bolCommingFromMenu = $true
+    $Global:bolComingFromMenu = $true
 
     <# Logging #>
     fncLogging -strLogFunction "fncShowMenu" -strLogDescription "MENU" -strLogValue "Selected"
@@ -4932,24 +4427,17 @@ Function fncShowMenu {
     Write-ColoredOutput Yellow "  [R] RESET"
     Write-ColoredOutput Yellow "  [P] RECORD PROBLEM"
     Write-ColoredOutput Yellow "  [C] COLLECT"
-    If ([System.Environment]::OSVersion.Platform -eq "Win32NT") { <# Detect Windows and show Windows supported features #>
-        If (@($Global:bolMenuCollectExtended) -Match $true) {
-            Write-ColoredOutput Yellow "   ├──[A] AIP service configuration"
-            Write-ColoredOutput Yellow "   ├──[T] Protection templates"
-            Write-ColoredOutput Yellow "   ├──[E] Endpoint URLs"
-            Write-ColoredOutput Yellow "   ├──[L] Labels and policies"
-            Write-ColoredOutput Yellow "   ├──[D] DLP rules and policies"
-            Write-ColoredOutput Yellow "   └──[U] User license details"
-        }
-    }
-    If ($IsMacOS -eq $true) { <# Detect macOS and show macOS supported features #>
-        If (@($Global:bolMenuCollectExtended) -Match $true) {
-            Write-ColoredOutput Yellow "   ├──[L] Labels and policies"
-            Write-ColoredOutput Yellow "   ├──[D] DLP rules and policies"
-            Write-ColoredOutput Yellow "   └──[U] User license details"
-        }
+    If (@($Global:bolMenuCollectExtended) -Match $true) {
+        Write-ColoredOutput Yellow "   ├──[A] AIP service configuration"
+        Write-ColoredOutput Yellow "   ├──[T] Protection templates"
+        Write-ColoredOutput Yellow "   ├──[E] Endpoint URLs"
+        Write-ColoredOutput Yellow "   ├──[L] Labels and policies"
+        Write-ColoredOutput Yellow "   ├──[D] DLP rules and policies"
+        Write-ColoredOutput Yellow "   ├──[U] User license details"
+        Write-ColoredOutput Yellow "   └──[G] Exchange IRM configuration"
     }
     Write-ColoredOutput Yellow "  [Z] COMPRESS LOGS"
+    Write-ColoredOutput Yellow "  [Q] UPDATE REQUIRED MODULES"
     Write-ColoredOutput Green "  [X] EXIT`n"
 
     <# Define menu selection variable #>
@@ -4957,16 +4445,16 @@ Function fncShowMenu {
 
     <# Actions for information menu selected #>
     If ($Private:intMenuSelection -Eq "I") {
-        
+
         <# Logging #>
         fncLogging -strLogFunction "fncShowMenu" -strLogDescription "INFORMATION" -strLogValue "Selected"
-        
+
         <# Clear console #>
         Clear-Host
-        
+
         <# Call information function #>
         fncInformation
-        
+
         <# Call Pause #>
         fncPause
 
@@ -4974,10 +4462,10 @@ Function fncShowMenu {
 
     <# Actions for License menu selected #>
     If ($Private:intMenuSelection -Eq "M") {
-        
+
         <# Logging #>
         fncLogging -strLogFunction "fncShowMenu" -strLogDescription "MIT LICENSE" -strLogValue "Selected"
-        
+
         <# Clear console #>
         Clear-Host
 
@@ -4987,13 +4475,13 @@ Function fncShowMenu {
         <# Call Pause #>
         fncPause
     }
-   
+
     <# Actions for help menu selected #>
     If ($Private:intMenuSelection -Eq "H") {
-        
+
         <# Logging #>
         fncLogging -strLogFunction "fncShowMenu" -strLogDescription "HELP" -strLogValue "Selected"
-        
+
         <# Clear console #>
         Clear-Host
 
@@ -5001,13 +4489,13 @@ Function fncShowMenu {
         fncHelp
 
     }
-    
+
     <# Actions for reset menu selected #>
     If ($Private:intMenuSelection -Eq "R") {
 
         <# Logging #>
         fncLogging -strLogFunction "fncShowMenu" -strLogDescription "RESET" -strLogValue "Selected"
-        
+
         <# Clear console #>
         Clear-Host
 
@@ -5021,16 +4509,16 @@ Function fncShowMenu {
 
     <# Actions for record problem menu selected #>
     If ($Private:intMenuSelection -Eq "P") {
-        
+
         <# Logging #>
         fncLogging -strLogFunction "fncShowMenu" -strLogDescription "RECORD PROBLEM" -strLogValue "Selected"
-        
+
         <# Clear console #>
         Clear-Host
-        
+
         <# Call user logging function #>
         fncRecordProblem
-        
+
         <# Call Pause #>
         fncPause
 
@@ -5038,7 +4526,7 @@ Function fncShowMenu {
 
     <# COLLECT actions #>
     If ($Private:intMenuSelection -Eq "C") {
-        
+
         <# Menu extenstion  #>
         If (@($Global:bolMenuCollectExtended) -Match $true) {$Global:bolMenuCollectExtended = $false}
         Else {$Global:bolMenuCollectExtended = $true}
@@ -5050,16 +4538,16 @@ Function fncShowMenu {
 
         <# Service configuration actions #>
         If ($Private:intMenuSelection -Eq "A") {
-        
+
             <# Logging #>
             fncLogging -strLogFunction "fncShowMenu" -strLogDescription "COLLECT AIP SERVICE CONFIGURATION" -strLogValue "Selected"
-            
+
             <# Clear console #>
             Clear-Host
-            
+
             <# Call CollectAIPServiceConfigurationn #>
             fncCollectAIPServiceConfiguration
-            
+
             <# Call Pause #>
             fncPause
 
@@ -5067,16 +4555,16 @@ Function fncShowMenu {
 
         <# Protection templates actions #>
         If ($Private:intMenuSelection -Eq "T") {
-        
+
             <# Logging #>
             fncLogging -strLogFunction "fncShowMenu" -strLogDescription "COLLECT PROTECTION TEMPLATES" -strLogValue "Selected"
-            
+
             <# Clear console #>
             Clear-Host
-            
+
             <# Call CollectProtectionTemplates #>
             fncCollectProtectionTemplates
-            
+
             <# Call Pause #>
             fncPause
 
@@ -5084,35 +4572,35 @@ Function fncShowMenu {
 
         <# CollectEndpointURLs actions #>
         If ($Private:intMenuSelection -Eq "E") {
-        
+
             <# Logging #>
             fncLogging -strLogFunction "fncShowMenu" -strLogDescription "COLLECT ENDPOINT URLs" -strLogValue "Selected"
-            
+
             <# Clear console #>
             Clear-Host
-            
+
             <# Call CollectEndpointURLs #>
             fncCollectEndpointURLs
-            
+
             <# Call Pause #>
             fncPause
-            
+
         }
 
     }
 
     <# labels and policies actions #>
     If ($Private:intMenuSelection -Eq "L") {
-        
+
         <# Logging #>
         fncLogging -strLogFunction "fncShowMenu" -strLogDescription "COLLECT LABELS AND POLICIES" -strLogValue "Selected"
-            
+
         <# Clear console #>
         Clear-Host
-            
+
         <# Call CollectLabelsAndPolicies #>
         fncCollectLabelsAndPolicies
-            
+
         <# Call Pause #>
         fncPause
 
@@ -5120,53 +4608,92 @@ Function fncShowMenu {
 
     <# DLP rules and policies actions #>
     If ($Private:intMenuSelection -Eq "D") {
-        
+
         <# Logging #>
         fncLogging -strLogFunction "fncShowMenu" -strLogDescription "COLLECT DLP RULES AND POLICIES" -strLogValue "Selected"
-            
+
         <# Clear console #>
         Clear-Host
-            
+
         <# Call CollectDLPRulesAndPolicies #>
         fncCollectDLPRulesAndPolicies
-            
+
         <# Call Pause #>
         fncPause
-            
+
     }
 
     <# User license details actions #>
     If ($Private:intMenuSelection -Eq "U") {
-        
+
         <# Logging #>
         fncLogging -strLogFunction "fncShowMenu" -strLogDescription "COLLECT USER LICENSE DETAILS" -strLogValue "Selected"
-            
+
         <# Clear console #>
         Clear-Host
 
         <# Call CollectUserLiceneseDetails #>
         fncCollectUserLiceneseDetails
-            
+
         <# Call Pause #>
         fncPause
-            
+
+    }
+
+    <# Exchange IRM configuration actions #>
+    If ($Private:intMenuSelection -Eq "G") {
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncShowMenu" -strLogDescription "COLLECT EXCHANGE IRM CONFIGURATION" -strLogValue "Selected"
+
+        <# Clear console #>
+        Clear-Host
+
+        <# Call CollectExchangeIRMConfiguration #>
+        fncCollectExchangeIRMConfiguration
+
+        <# Call Pause #>
+        fncPause
+
     }
 
     <# Compress logs actions #>
     If ($Private:intMenuSelection -Eq "Z") {
-    
+
         <# Logging #>
         fncLogging -strLogFunction "fncShowMenu" -strLogDescription "COMPRESS LOGS" -strLogValue "Selected"
-        
+
         <# Clear console #>
         Clear-Host
-        
+
         <# Call CompressLogs #>
         fncCompressLogs
-        
+
         <# Call Pause #>
         fncPause
-        
+
+    }
+
+    <# Actions for required module updates #>
+    If ($Private:intMenuSelection -Eq "Q") {
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncShowMenu" -strLogDescription "UPDATE REQUIRED MODULES" -strLogValue "Selected"
+
+        <# Clear console #>
+        Clear-Host
+
+        <# Call update function #>
+        fncUpdateModules
+
+        <# Call Pause #>
+        fncPause
+
+        <# Return to menu #>
+        fncShowMenu
+
+        Return
+
     }
 
     <# Exit menu actions #>
@@ -5176,17 +4703,17 @@ Function fncShowMenu {
         fncLogging -strLogFunction "fncShowMenu" -strLogDescription "EXIT" -strLogValue "Selected"
 
         <# Clear variable #>
-        $Global:bolCommingFromMenu = $false
+        $Global:bolComingFromMenu = $false
 
         <# Release variable (updates active) #>
         $Global:bolSkipRequiredUpdates = $false
 
         <# Set back window title #>
         $Global:host.UI.RawUI.WindowTitle = $Global:strDefaultWindowTitle
-        
+
         <# Exit #>
         Break
-        
+
     }
     Else {
 
@@ -5203,11 +4730,8 @@ Function fncShowMenu {
 <# Initialize module #>
 fncInitialize
 
-<# Remove Unified Labeling Support Tool) #>
-fncRemoveUnifiedLabelingSupportTool
-
 <# Detect enabled logging #>
 fncValidateForActivatedLogging
 
 <# Export functions #>
-Export-ModuleMember -Function ComplianceUtility -Alias "CompUtil", "UnifiedLabelingSupportTool"
+Export-ModuleMember -Function ComplianceUtility -Alias "CompUtil"
