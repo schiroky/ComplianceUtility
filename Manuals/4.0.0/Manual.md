@@ -65,7 +65,7 @@ Before you can use the Compliance Utility make sure that your environment fulfil
 
 **The Compliance Utility supports the following PowerShell editions:**
 
-* Windows [PowerShell 5.1](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-5.1) (recommended)
+* Windows [PowerShell 5.1](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-5.1)
 * [PowerShell 7.6](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows?view=powershell-7.6) (or higher)
 
 > **Note**
