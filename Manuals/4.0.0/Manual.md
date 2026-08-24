@@ -963,7 +963,7 @@ For more information, please see the following documentation:
 
 <li>
 
-**IRMConfiguration.log/IRMConfiguration.xml** <a name="IRMConfiguration-log"></a>
+**IRMConfiguration.log, IRMConfiguration.xml** <a name="IRMConfiguration-log"></a>
 
 </li>
 
