@@ -25,7 +25,10 @@ Function fncInitialize{
 
     <# Variable for Windows version #>
     $Global:strOSVersion = (Get-CimInstance Win32_OperatingSystem).Caption
-    
+
+    <# Variable to detect and log Microsoft 365 #>
+    $Private:strOfficeC2RPath = "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration"    
+
     <# Logging Windows edition and version #>
     fncLogging -strLogFunction "fncInitialize" -strLogDescription "OS edition" -strLogValue $Global:strOSVersion
     fncLogging -strLogFunction "fncInitialize" -strLogDescription "OS version" -strLogValue $([System.Environment]::OSVersion.Version)
@@ -46,6 +49,60 @@ Function fncInitialize{
     fncLogging -strLogFunction "fncInitialize" -strLogDescription "PowerShell Current culture" -strLogValue $($Host.CurrentCulture.ToString()) <# PowerShell culture #>
     fncLogging -strLogFunction "fncInitialize" -strLogDescription "PowerShell Current UI culture" -strLogValue $($Host.CurrentUICulture.ToString()) <# PowerShell UI culture #>
     fncLogging -strLogFunction "fncInitialize" -strLogDescription "Running privileged" -strLogValue $Global:bolRunningPrivileged <# Administrative privileges #>
+
+    <# Detect and log Microsoft 365 #>
+    If ($(Test-Path -Path $Private:strOfficeC2RPath) -eq $true) {
+
+        $Private:objOfficeC2R = Get-ItemProperty -Path $Private:strOfficeC2RPath -ErrorAction SilentlyContinue
+
+        If ($null -ne $Private:objOfficeC2R) {
+
+            $Private:objOfficeChannels = @{
+                "492350f6-3a01-4f97-b9c0-c7c6ddf67d60" = "Current Channel"
+                "55336b82-a18d-4dd6-b5f6-9e5095c314a6" = "Monthly Enterprise Channel"
+                "7ffbc6bf-bc32-4f92-8982-f9dd17fd3114" = "Semi-Annual Enterprise Channel"
+                "b8f9b850-328d-4355-9145-c59439a0c4cf" = "Semi-Annual Enterprise Channel (Preview)"
+                "5440fd1f-7ecb-4221-8110-145efaa6372f" = "Current Channel (Preview)"
+                "64256afe-f5d9-4f86-8936-8840a6a4f5be" = "Beta Channel"
+            }
+
+            $Private:strOfficeChannelGuid = $null
+            $Private:strOfficeChannelName = "Not determinable"
+
+            If (-not [String]::IsNullOrWhiteSpace($Private:objOfficeC2R.UpdateChannel)) {
+
+                $Private:strOfficeChannelGuid = ($Private:objOfficeC2R.UpdateChannel -split "/")[-1].ToLowerInvariant()
+
+                If ($Private:objOfficeChannels.ContainsKey($Private:strOfficeChannelGuid)) {
+                    $Private:strOfficeChannelName = $Private:objOfficeChannels[$Private:strOfficeChannelGuid]
+                }
+                Else {
+                    $Private:strOfficeChannelName = "Unknown ($Private:strOfficeChannelGuid)"
+                }
+
+            }
+
+            <# Logging M365 #>
+            fncLogging -strLogFunction "fncInitialize" -strLogDescription "M365 installed" -strLogValue $true
+            fncLogging -strLogFunction "fncInitialize" -strLogDescription "M365 version" -strLogValue $Private:objOfficeC2R.VersionToReport
+            fncLogging -strLogFunction "fncInitialize" -strLogDescription "M365 architecture" -strLogValue $Private:objOfficeC2R.Platform
+            fncLogging -strLogFunction "fncInitialize" -strLogDescription "M365 channel" -strLogValue $Private:strOfficeChannelName
+            fncLogging -strLogFunction "fncInitialize" -strLogDescription "M365 products" -strLogValue $($Private:objOfficeC2R.ProductReleaseIds -join ", ")
+
+        }
+        Else {
+
+            <# Logging #>
+            fncLogging -strLogFunction "fncInitialize" -strLogDescription "M365 installed" -strLogValue "Not determinable"
+        }
+
+    }
+    Else {
+
+        <# Logging #>
+        fncLogging -strLogFunction "fncInitialize" -strLogDescription "M365 installed" -strLogValue $false
+
+    }
 
     <# Variable to check for unsupported PowerShell #>
     $Global:bolSupportedPowerShell | Out-Null
